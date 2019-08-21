@@ -81,10 +81,6 @@ Function Install-Tools {
                 Write-Host -ForegroundColor Green "[+] Expanding PingCastle Archive"
                 Expand-Archive $PingCastleZipDst -DestinationPath $PingCastleDst
                 Remove-item $PingCastleZipDst
-
-                Write-Host -ForegroundColor Green "[+] Modifying path variable"
-                [Environment]::SetEnvironmentVariable
-                ("C:\tools\PingCastle", $env:Path, [System.EnvironmentVariableTarget]::Machine)
             }
         }
     }
