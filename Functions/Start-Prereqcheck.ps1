@@ -19,7 +19,7 @@ Function Start-PrereqCheck {
         $Modules = @(
             "C:\Tools\PowerSploit\Recon\PowerView.ps1"
             "C:\Tools\PowerSploit\Exfiltration\Get-GPPPassword.ps1"
-            "C:\Tools\BloodHound\Injestors\SharpHound.ps1"
+            "C:\Tools\BloodHound\Ingestors\SharpHound.ps1"
             "C:\Tools\Grouper\grouper.psm1"
             "C:\Tools\PingCastle\PingCastle.exe"
         )
