@@ -67,10 +67,12 @@ Function Start-ADEnum {
             "Microsoft Services\ADCS"
         )
 
+        #Installs all prereqs if missing
         Write-Host -ForegroundColor Green "[*] Performing prereqs check"
         Start-PrereqCheck
 
         Import-Module C:\Tools\PowerSploit\Recon\PowerView.ps1
+        
         #Creating Path and evidence folder structure
         if ((Test-Path $Path) -eq $false) {
             try {
@@ -129,6 +131,7 @@ Function Start-ADEnum {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
 
+            #Set domain variable to determine if single or multiple domains need to be tested
             try {
                 if ($Domains) {
                 foreach ($Domain in $Domains)  {
@@ -174,6 +177,7 @@ Function Start-ADEnum {
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\PowerView\"
 
+            #Encryption type array used in converting number values in users/computer msDS-SupportedEncryptionTypes attribute
             $EncryptionTypes = @{
                 "1"  = "DES_CRC"                
                 "2"  = "DES_MD5"
@@ -189,13 +193,13 @@ Function Start-ADEnum {
             #Importing needed modules
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            #Domain Policy
+            #Dump domain policy
             (Get-DomainPolicy -Domain $Domain).SystemAccess | Out-File ($Folder, $Domain + "_" + "Domain_Password_Policy.txt" -join "")
 
-            #Forest Functional Level
+            #Dump forest functional level
             Get-NetForest | Out-File ($Folder, $Domain + "_" + "Forest_Functional_Level.txt" -join "")
 
-            #Domain Function Level
+            #Dump domain function level
             Get-NetDomain | Out-File ($Folder, $Domain + "_" + "Domain_Functional_Level.txt" -join "")
 
             #Krbtgt Password Last Set
@@ -204,7 +208,7 @@ Function Start-ADEnum {
             #Gather a list of Domain Controllers
             Get-NetDomainController -Domain $Domain | Select-Object -Property Forest, Domain, Name, SiteName, IPAddress | Export-CSV ($Folder, $Domain + "_" + "DomainControllers.csv" -join "") -NoTypeInformation
 
-            #AD Sites
+            #Dump AD Sites
             Get-DomainSite -Domain $Domain | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSites.csv" -join "") -NoTypeInformation
 
             #AD SiteSubnets
@@ -219,7 +223,7 @@ Function Start-ADEnum {
             #Get a list of DFS Shares
             Get-DomainDFSShare -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
 
-            #Get a list of OU's
+            #Dump a list of OU's
             Get-DomainOU -Domain $Domain | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
@@ -256,19 +260,17 @@ Function Start-ADEnum {
                 $object | Export-Csv ($Folder, $Domain + "_" + "Users.csv" -join "") -NoTypeInformation -Append
             }
 
-            #Gather a list of foreign users
+            #Dumping a list of foreign users
             Get-DomainForeignUser -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
 
             #Dumping all AD computer objects
-            $Server = Get-ADDomainController -DomainName $Domain -Discover -NextClosestSite
             $Computers = Get-DomainComputer * -Domain $Domain
 
             foreach ($Computer in $Computers) {
                 $ComputerProperties = [ordered]@{
                     'Name'                                     = $Computer.name;
                     'UserName'                                 = $Computer.samaccountname
-                    'Enabled'                                  = (Get-ADComputer -Identity $Computer.Name -Server $Server.IPv4Address).Enabled;
-                    'IPv4Address'                              = (Get-ADComputer -Identity $Computer.Name -Properties IPv4Address -Server $Server.IPv4Address).IPv4Address;
+                    'IPv4Address'                              = ($Computer.dnshostname | Get-IPAddress).IPAddress
                     'DNSHostname'                              = $Computer.dnshostname;
                     'Operating System'                         = $Computer.operatingsystem;
                     'OS Version'                               = $Computer.operatingsystemversion;
@@ -307,14 +309,17 @@ Function Start-ADEnum {
                 "DnsAdmins"
                 "Hyper-V Administrators"
             )
+
             foreach ($Group in $Groups) {
                 Get-NetGroupMember $Group -Domain $Domain -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
             }
 
             #Dump Trust details specifically looking for TGT delegation settings
-            Get-ADTrust -Filter * -Server $Server.IPv4Address | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
+            $Server = Get-ADDomainController -DomainName $Domain -Discover -NextClosestSite
+            Get-ADTrust -Filter * -Server $Server.IPv4Address | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "")
         }
 
+        #Running Bloodhound commands
         $BloodhoundScriptBlock = {
             $ClientName = $args[0]
             $Path = $args[1]
@@ -328,6 +333,7 @@ Function Start-ADEnum {
             Set-Location $Folder ; Invoke-Bloodhound -Domain $Domain -CollectionMethod All -SkipPing -ZipFileName ($Domain + "_" + "Bloodhound.zip")
         }
 
+        #Running RSAT GPO Get-GPOReport commands
         $GPOReportScriptBlock = {
             $ClientName = $args[0]
             $Path = $args[1]
@@ -343,6 +349,7 @@ Function Start-ADEnum {
             Invoke-AuditGPOReport -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "") -Level 3 | Out-File ($Folder, $Domain + "_" + "GrouperResults.txt" -join "")
         }
 
+        #Checking domain for Exchange PrivExchange vulnerability
         $PrivExchangeCheck = {
             $ClientName = $args[0]
             $Path = $args[1]
@@ -402,27 +409,32 @@ Function Start-ADEnum {
             $ExchangeVersions[$ExchangeVersion] | Out-File ($Folder, $Domain + "_" + "ExchangeVersion.txt" -join "")
         }
 
+        #Command to extract Active Directory Certificate Services usable certificates
         $ADCS = {
             $ClientName = $args[0]
             $Path = $args[1]
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\Microsoft Services\ADCS\"
 
+            #Identify instances of Active Directory Certificate Service
             $RootDSE = "DC=$($Domain.Replace('.', ',DC='))"
             $CAs = ([ADSI]"LDAP://CN=Enrollment Services,CN=Public Key Services,CN=Services,CN=Configuration,$RootDSE").Children
 
+            #Dumping list of available certificates
             foreach ($CA in $CAs) {
                 Write-Host -ForegroundColor Green "[+] Extracting a list of available certificates for $($CA.displayName)"
                 $CA.certificateTemplates | Out-File ($Folder, $Domain + "_" + $CA.displayName + "_" + "available_certs.txt" -join "")
             }
         }
 
+        #Running PingCastle commands
         $PingCastleScriptBlock = {
             $ClientName = $args[0]
             $Path = $args[1]
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\PingCastle\"
 
+            #PingCastle scanner commands
             $Arguments = @(
                 "--server $Domain --healthcheck --no-enum-limit"
                 "--scanner laps_bitlocker --server $Domain"
@@ -434,16 +446,19 @@ Function Start-ADEnum {
                 "--scanner startup --server $Domain"
             )
 
+            #Running all scanner commands
             foreach ($Argument in $Arguments) {
                 Set-Location $Folder ; Start-Process C:\tools\PingCastle\PingCastle.exe -ArgumentList $Argument -Wait
             }
 
             $Output = (Get-ChildItem $Folder -Exclude *html*, *xml*).FullName
 
+            #Converting PingCastle text files into CSV's
             foreach ($Item in $Output) {
                 Import-Csv -Path $Item -Delimiter "`t" | Export-Csv -Path  ($Folder + ($Item -split "\\" -replace "ad_scanner_" -replace ".txt" | Select-Object -Skip 5) + ".csv" -join "") -NoTypeInformation
             }
 
+            #Remove original text files
             (Get-ChildItem $Folder).FullName | Remove-Item -Include *.txt
         }
 

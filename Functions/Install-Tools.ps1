@@ -13,7 +13,7 @@ Function Install-Tools {
         $BloodHountUrl = "https://github.com/BloodHoundAD/BloodHound.git"
         $GrouperUrl = "https://github.com/l0ss/Grouper.git"
 
-        #Choco tools variable
+        #Chocolately tools variable
         $ChocoTools = @(
             "git"
         )
@@ -21,11 +21,13 @@ Function Install-Tools {
         #Tools folder
         $ToolsFolder = "C:\Tools"
 
+        #Create tools directory if it doesn't already exist
         if (!(Test-Path $ToolsFolder)) {
             Write-Host -ForegroundColor Green "[+] Creating tools directory"
             mkdir $ToolsFolder | Out-Null
         }
 
+        #Install chocolately if not already installed
         if (!(Test-Path $ENV:ChocolateyInstall)) {
             Write-Host -ForegroundColor Green "[+] Installing Chocolately"
             try {
@@ -39,6 +41,7 @@ Function Install-Tools {
     }
 
     Process {
+        #Install all chocoaltely tools
         foreach ($ChocoTool in $ChocoTools) {
             try {
                 $Installed = (Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where { $_.DisplayName -like "*$ChocoTool*" }) -ne $null
@@ -52,6 +55,7 @@ Function Install-Tools {
             }
         }
 
+        #Switch statement to install specific tool. This section is started from the Start-PreReqCheck function
         switch ($Tool) {
             "PowerSploit" {
                 Write-Host -ForegroundColor Green "[+] Cloning PowerSploit into $ToolsFolder and switching to dev branch"

@@ -29,6 +29,7 @@ Function Start-PrereqCheck {
             Write-Error -Message "The script requires elevation"
             break
         }
+
         #Check if using correct version of Windows
         if (!($WindowsBuild -eq $1809Build -OR $WindowsBuild -eq $1903Build)) {
             throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or 1903"
@@ -51,6 +52,7 @@ Function Start-PrereqCheck {
     }
 
     process {
+        #Uitlizes the Install-Tool function to install modules if not already present.
         foreach ($Module in $Modules) {
             try {
                 if (!(Test-Path -Path $Module)) {
@@ -76,6 +78,7 @@ Function Start-PrereqCheck {
                 }
             }
         }
+
         else {
             Write-Host -ForegroundColor Green "[*] All RSAT features seems to be installed already"
         }
