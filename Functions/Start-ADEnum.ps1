@@ -12,10 +12,10 @@ Function Start-ADEnum {
     Enter clientname for folder structure.
 
     .PARAMETER Path
-    Enter path where evidence will be placed.
+    Enter path where evidence will be placed. If folder doesn't already exist, the script will create it.
 
     .PARAMETER Domain
-    Enter individual domain to enumerate instead of automatically finding all available domains.
+    Enter individual domain to enumerate or let the script automatically identify all vailable domains via trust enumeration.
 
     .PARAMETER Scan
     Enter individual scan(s) to perform.
@@ -50,7 +50,7 @@ Function Start-ADEnum {
         $Domains,
 
         [Parameter(Mandatory = $True)]
-        [ValidateSet("ADCS", "Bloodhound", "GPO", "PowerView", "PingCastle", "PrivExchange", "All")]
+        [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PrivExchange", "All")]
         [String[]]
         $Scan
     )
@@ -61,8 +61,7 @@ Function Start-ADEnum {
             "PingCastle"
             "PowerView"
             "Bloodhound"
-            "GPO"
-            "GPP"
+            "GPO" 
             "Microsoft Services\Exchange"
             "Microsoft Services\ADCS"
         )

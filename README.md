@@ -57,9 +57,25 @@ The following scans types are available:
 
 * Ping Castle - Perform an Active Directory health check and runs various scanners such as open share, SMB version and signing enabled, spooler service available, null sessions on hosts/trusts and laps/bitlocker checks.
 
+## Paramters
+* ClientName
+
+    Enter the client name for folder structure.
+
+
+* Path
+
+    Enter path where evidence will be placed. If folder doesn't already exist, the script will create it.
+
+* Domains
+
+    Enter individual domain to enumerate or let the script automatically identify all vailable domains via trust enumeration.
+
+* Scan
+
+    Enter individual scan(s) to perform. Scans that are available include Active Directory Certificate Services (ADCS) , Bloodhound, GPOReport, PowerView, PingCastle, PrivExchange, and All
+
 ## Examples
-
-
 
 Gathers a list of all domain/forest by enumerating trusts and runs all scans against each domain found.
 
@@ -74,4 +90,3 @@ Runs all scans against lkylabs.com and corp.lkylabs.com.
 Runs PowerView and Bloodhound scans against lkylabs.com and corp.lkylabs.com domains.
     
     Start-ADEnum -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com,corp.lkylabs.com  -Scan PowerView,Bloodhound
-
