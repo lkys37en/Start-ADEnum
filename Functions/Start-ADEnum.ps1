@@ -26,7 +26,7 @@ Function Start-ADEnum {
 
     .EXAMPLE
     PS C:\> Start-ADEnum  -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com  -Scan All
-    Runs all scans against lkylabs.com and corp.lkylabs.com.
+    Runs all scans against lkylabs.com.
 
     .EXAMPLE
     PS C:\> Start-ADEnum  -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com,corp.lkylabs.com  -Scan PowerView,Bloodhound,
