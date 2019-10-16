@@ -47,7 +47,7 @@ Function Start-ADEnum {
 
         [Parameter(Mandatory = $false)]
         [String[]]
-        $Domains,
+        $Domain,
 
         [Parameter(Mandatory = $True)]
         [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PrivExchange", "All")]
@@ -403,8 +403,8 @@ Function Start-ADEnum {
                 "15.00.0516.032" = "Exchange Server 2013 RTM, Vulnerable to PrivExchange!"
             }
             $RootDSE = "DC=$($Domain.Replace('.', ',DC='))"
-            $CN = $Domain.Split('.')[0]
-            $ExchangeVersion = ([ADSI]"LDAP://cn=$CN,cn=Microsoft Exchange,cn=Services,cn=Configuration,$RootDSE").msExchProductID
+            $CN = (([ADSI]"LDAP://cn=Microsoft Exchange,cn=Services,cn=Configuration,$RootDSE")).Children
+            $ExchangeVersion = ($CN).msExchProductID
             $ExchangeVersions[$ExchangeVersion] | Out-File ($Folder, $Domain + "_" + "ExchangeVersion.txt" -join "")
         }
 
