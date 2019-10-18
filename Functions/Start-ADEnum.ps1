@@ -95,7 +95,6 @@ Function Start-ADEnum {
 
             try {
                 if ($Domain) {
-                    Write-host -ForegroundColor Green "[+] Performing Enumeration only on $Domain"
                     $Domains = $Domain
                 }
 
@@ -133,10 +132,8 @@ Function Start-ADEnum {
             #Set domain variable to determine if single or multiple domains need to be tested
             try {
                 if ($Domains) {
-                foreach ($Domain in $Domains)  {
-                    Write-host -ForegroundColor Green "[+] Performing Enumeration on $($Domain -split ',' )"
+                    $Domains = $Domain
                     }
-                }
 
                 else {
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
