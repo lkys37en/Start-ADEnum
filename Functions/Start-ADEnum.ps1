@@ -71,6 +71,15 @@ Function Start-ADEnum {
         Start-PrereqCheck
 
         Import-Module C:\Tools\PowerSploit\Recon\PowerView.ps1
+
+        #Checking Domain Context before moving forward
+        try {
+            [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain() | Out-Null
+        }
+
+        catch {
+            throw "[*] Not currently assoicated with a domain account, perform runas /netonly before enumerating AD $($_.Exception.Message)"
+        }
         
         #Creating Path and evidence folder structure
         if ((Test-Path $Path) -eq $false) {
@@ -80,7 +89,7 @@ Function Start-ADEnum {
             }
 
             catch {
-                throw "An error has occurred  $($_.Exception.Message)"
+                throw "An error has occurred $($_.Exception.Message)"
             }
 
 
@@ -99,6 +108,7 @@ Function Start-ADEnum {
                 }
 
                 else {
+                    Write-Host -ForegroundColor "[*] Collecting a list of domains.."
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
                     if ($Domains -eq $null) { $Domains = (Get-NetDomain).Name }
                 }
@@ -120,48 +130,44 @@ Function Start-ADEnum {
 
         elseif ((Test-Path $Path) -eq $true) {
             try {
-                Write-Host -ForegroundColor Green "[+] Creating $ClientName Folder"
-                mkdir -Path $Path\$ClientName | Out-Null
-
+                if ((Test-Path $Path\$ClientName) -eq $false ) {
+                    Write-Host -ForegroundColor Green "[+] Creating $ClientName Folder"
+                    mkdir -Path $Path\$ClientName | Out-Null
+                }
             }
 
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
-
+        
             #Set domain variable to determine if single or multiple domains need to be tested
             try {
-                if ($Domains) {
+                if ($Domain) {
                     $Domains = $Domain
-                    }
+                }
 
                 else {
+                    Write-Host -ForegroundColor Green "[*] Collecting a list of domains.."
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
                     if ($Domains -eq $null) { $Domains = (Get-NetDomain).Name }
                 }
 
                 foreach ($Domain in $Domains) {
-                    Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
-                    mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
-
+                    if ((Test-Path -Path $Path\$ClientName\$Domain) -eq $false) {
+                        Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
+                        mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
+                    }
                     foreach ($folder in $folders) {
-                        mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
+                        if ((Test-Path "$Path\$ClientName\$Domain\$folder") -eq $false) {
+                            mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
+                        }
                     }
                 }
             }
-
+        
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
-        }
-
-        #Checking Domain Context before moving forward
-        try {
-            [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain() | Out-Null
-        }
-
-        catch {
-            throw "[*] Not currently assoicated with a domain account, perform runas /netonly before enumerating AD"
         }
     }
 
@@ -246,15 +252,18 @@ Function Start-ADEnum {
                     'accountexpires'                           = $User.accountexpires;
                     'admincount'                               = $User.admincount;
                     'useraccountcontrol'                       = $User.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()]};
-                    'serviceprincipalname'                     = (($User.serviceprincipalname) -join ',');
-                    'msDS-AllowedToDelegateTo'                 = (($User.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
+                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()] };
+                    'serviceprincipalname'                     = if ($User.serviceprincipalname -ne '') { (($User.serviceprincipalname) -join ',') };
+                    'msDS-AllowedToDelegateTo'                 = if ($User.'msDS-AllowedToDelegateTo' -ne '') { (($User.'msDS-AllowedToDelegateTo') -join ',') };
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $UserProperties
                 $object | Export-Csv ($Folder, $Domain + "_" + "Users.csv" -join "") -NoTypeInformation -Append
             }
+
+            #Dumping list of AD Groups
+            Get-NetGroup -Identity * | Select-Object -Property samaccountname, description, objectsid, grouptype | Export-CSV ($Folder, $Domain + "_" + "Groups.csv" -join "") -NoTypeInformation
 
             #Dumping a list of foreign users
             Get-DomainForeignUser -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
@@ -277,12 +286,12 @@ Function Start-ADEnum {
                     'Whencreated'                              = $Computer.whencreated;
                     'lastlogontimestamp'                       = $Computer.lastlogontimestamp;
                     'useraccountcontrol'                       = $Computer.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()]};
-                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain};
                     'ms-mcs-admpwd'                            = $Computer.'ms-mcs-admpwd';
-                    'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'))
-                    'msDS-AllowedToDelegateTo'                 = (($Computer.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
+                    'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'));
+                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()] };
+                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain };
+                    'msDS-AllowedToDelegateTo'                 = if ($Computer.'msDS-AllowedToDelegateTo' -ne '') { (($Computer.'msDS-AllowedToDelegateTo') -join ',') };
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $ComputerProperties

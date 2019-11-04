@@ -7,6 +7,7 @@ Function Install-Tools {
         [String]
         $Tool
     )
+    
     Begin {
         #Github tools url
         $PowerSploitUrl = "https://github.com/PowershellMafia/PowerSploit.git"
@@ -50,6 +51,7 @@ Function Install-Tools {
                     Start-Process -Wait choco -ArgumentList "install $ChocoTool -y -f "
                 }
             }
+            
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
@@ -58,33 +60,78 @@ Function Install-Tools {
         #Switch statement to install specific tool. This section is started from the Start-PreReqCheck function
         switch ($Tool) {
             "PowerSploit" {
-                Write-Host -ForegroundColor Green "[+] Cloning PowerSploit into $ToolsFolder and switching to dev branch"
-                Set-Location $ToolsFolder ; git clone -q $PowerSploitUrl;
-                Set-Location $ToolsFolder\PowerSploit; git checkout -q dev ; git pull -q
+                if (!(Test-Path "$ToolsFolder\PowerSploit")) {
+                    try {
+                        #Downloads PowerSpoit Dev branch if the PowerSploit directory doesn't exist
+                        Write-Host -ForegroundColor Green "[+] Cloning PowerSploit into $ToolsFolder and switching to dev branch"
+                        Set-Location $ToolsFolder ; git clone -q $PowerSploitUrl;
+                        Set-Location $ToolsFolder\PowerSploit; git checkout -q dev ; git pull -q
+                    }
+
+                    catch {
+                        throw "An error has occurred  $($_.Exception.Message)"
+                    }
+                }
+
+                else {
+                    #Performs Git pull on PowerSploit directory if it already exists
+                    Write-Host -ForegroundColor Green "[+] PowerSploit already downloaded, performing git pull"
+                    Set-Location "$ToolsFolder\PowerSploit" ; git pull | Out-Null
+                }
             }
 
             "BloodHound" {
-                Write-Host -ForegroundColor Green "[+] Cloning BloodHound directory to $ToolsFolder"
-                Set-Location $ToolsFolder ; git clone -q $BloodHountUrl
+                if (!(Test-Path "$ToolsFolder\BloodHound\Ingestors\SharpHound.ps1")) {
+                    try {
+                        #Downloads PowerSpoit Dev branch if the PowerSploit directory doesn't exist
+                        Write-Host -ForegroundColor Green "[+] Cloning BloodHound directory to $ToolsFolder"
+                        Set-Location $ToolsFolder ; git clone -q $BloodHountUrl
+                    }
+                    
+                    catch {
+                        throw "An error has occurred  $($_.Exception.Message)"
+                    }
+                }
+
+                else {
+                    Write-Host -ForegroundColor Green "[+] PowerSploit already downloaded, performing git pull"
+                    Set-Location "$ToolsFolder\Bloodhound" ; git pull | Out-Null
+                }
             }
 
             "Grouper" {
-                Write-Host -ForegroundColor Green "[+] Cloning Grouper directory to $ToolsFolder"
-                Set-Location $ToolsFolder ; git clone -q $GrouperUrl
+                if (!(Test-Path "$ToolsFolder\Grouper")) {
+                    try {
+                        Write-Host -ForegroundColor Green "[+] Cloning Grouper directory to $ToolsFolder"
+                        Set-Location $ToolsFolder ; git clone -q $GrouperUrl
+                    }
+
+                    catch {
+                        throw "An error has occurred  $($_.Exception.Message)"
+                    }
+                }
+                
+                else {
+                    Write-Host -ForegroundColor Green "[+] Grouper already downloaded, performing git pull"
+                    Set-Location "$ToolsFolder\Grouper" ; git pull | Out-Null
+                }
             }
+
             "PingCastle" {
-                $PingCastle = ((Invoke-WebRequest https://github.com/vletoux/pingcastle/releases -UseBasicParsing).Links | Where-Object -Property outerHTML -like ("*.zip*")).href | Select-Object -First 1
-                $PingCastleUrl = "https://github.com$PingCastle"
-                $PingCastleZip = $PingCastle -split '/' | Select-Object -Last 1
-                $PingCastleZipDst = "C:\tools\$PingCastleZip"
-                $PingCastleDst = "C:\tools\PingCastle"
+                if (!(Test-Path "$ToolsFolder\PingCastle")) {
+                    $PingCastle = ((Invoke-WebRequest https://github.com/vletoux/pingcastle/releases -UseBasicParsing).Links | Where-Object -Property outerHTML -like ("*.zip*")).href | Select-Object -First 1
+                    $PingCastleUrl = "https://github.com$PingCastle"
+                    $PingCastleZip = $PingCastle -split '/' | Select-Object -Last 1
+                    $PingCastleZipDst = "C:\tools\$PingCastleZip"
+                    $PingCastleDst = "C:\tools\PingCastle"
 
-                Write-Host -ForegroundColor Green "[+] Downloading PingCastle"
-                Invoke-WebRequest -Uri $PingCastleUrl -OutFile $PingCastleZipDst
+                    Write-Host -ForegroundColor Green "[+] Downloading PingCastle to $ToolsFolder"
+                    Invoke-WebRequest -Uri $PingCastleUrl -OutFile $PingCastleZipDst
 
-                Write-Host -ForegroundColor Green "[+] Expanding PingCastle Archive"
-                Expand-Archive $PingCastleZipDst -DestinationPath $PingCastleDst
-                Remove-item $PingCastleZipDst
+                    Write-Host -ForegroundColor Green "[+] Expanding PingCastle Archive"
+                    Expand-Archive $PingCastleZipDst -DestinationPath $PingCastleDst
+                    Remove-item $PingCastleZipDst
+                }
             }
         }
     }

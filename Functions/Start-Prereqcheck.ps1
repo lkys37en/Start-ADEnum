@@ -1,5 +1,5 @@
 Function Start-PrereqCheck {
-    begin {
+    Begin {
         # Windows 10 1809 build
         $1809Build = "17763"
 
@@ -14,7 +14,7 @@ Function Start-PrereqCheck {
 
         #RSAT Check Variable
         $RSATInstall = Get-WindowsCapability -Online | Where-Object { $_.Name -like "Rsat*" -AND $_.State -eq "NotPresent" }
-
+                
         #Module Check Variable
         $Modules = @(
             "C:\Tools\PowerSploit\Recon\PowerView.ps1"
@@ -23,7 +23,7 @@ Function Start-PrereqCheck {
             "C:\Tools\Grouper\grouper.psm1"
             "C:\Tools\PingCastle\PingCastle.exe"
         )
-
+        
         # Check for administrative rights
         if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
             Write-Error -Message "The script requires elevation"
@@ -51,7 +51,7 @@ Function Start-PrereqCheck {
         }
     }
 
-    process {
+    Process {
         #Uitlizes the Install-Tool function to install modules if not already present.
         foreach ($Module in $Modules) {
             try {
