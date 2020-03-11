@@ -108,7 +108,7 @@ Function Start-ADEnum {
                 }
 
                 else {
-                    Write-Host -ForegroundColor "[*] Collecting a list of domains.."
+                    Write-Host -ForegroundColor Green "[*] Collecting a list of domains.."
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
                     if ($Domains -eq $null) { $Domains = (Get-NetDomain).Name }
                 }
