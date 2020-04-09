@@ -5,6 +5,9 @@ Function Start-PrereqCheck {
 
         # Windows 10 1903 build
         $1903Build = "18362"
+        
+        # Windows 10 1909 build
+        $1909Build = "18363"
 
         # Get running Windows build
         $WindowsBuild = (Get-WmiObject -Class Win32_OperatingSystem).BuildNumber
@@ -31,7 +34,7 @@ Function Start-PrereqCheck {
         }
 
         #Check if using correct version of Windows
-        if (!($WindowsBuild -eq $1809Build -OR $WindowsBuild -eq $1903Build)) {
+        if (!($WindowsBuild -eq $1809Build -OR $WindowsBuild -eq $1903Build -OR $WindowsBuild -eq $1909Build)) {
             throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or 1903"
         }
 
