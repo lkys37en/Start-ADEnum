@@ -35,7 +35,7 @@ Function Start-PrereqCheck {
 
         #Check if using correct version of Windows
         if (!($WindowsBuild -eq $1809Build -OR $WindowsBuild -eq $1903Build -OR $WindowsBuild -eq $1909Build)) {
-            throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or 1903"
+            throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or better"
         }
 
         #Disabling Defender real time protection
@@ -55,7 +55,7 @@ Function Start-PrereqCheck {
     }
 
     Process {
-        #Uitlizes the Install-Tool function to install modules if not already present.
+        # Utilizes the Install-Tool function to install modules if not already present.
         foreach ($Module in $Modules) {
             try {
                 if (!(Test-Path -Path $Module)) {

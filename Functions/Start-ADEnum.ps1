@@ -26,11 +26,11 @@ Function Start-ADEnum {
 
     .EXAMPLE
     PS C:\> Start-ADEnum  -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com  -Scan All
-    Runs all scans against lkylabs.com.
+    Runs all scans against a single domain.
 
     .EXAMPLE
     PS C:\> Start-ADEnum  -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com,corp.lkylabs.com  -Scan PowerView,Bloodhound,
-    Runs PowerView and Bloodhound scans against lkylabs.com and corp.lkylabs.com domains.
+    Runs PowerView and Bloodhound scans against domains lkylabs.com and corp.lkylabs.com.
 
     #>
     [CmdletBinding()]
@@ -61,7 +61,7 @@ Function Start-ADEnum {
             "PingCastle"
             "PowerView"
             "Bloodhound"
-            "GPO" 
+            "GPO"
             "Microsoft Services\Exchange"
             "Microsoft Services\ADCS"
         )
@@ -80,7 +80,7 @@ Function Start-ADEnum {
         catch {
             throw "[*] Not currently assoicated with a domain account, perform runas /netonly before enumerating AD $($_.Exception.Message)"
         }
-        
+
         #Creating Path and evidence folder structure
         if ((Test-Path $Path) -eq $false) {
             try {
@@ -139,7 +139,7 @@ Function Start-ADEnum {
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
-        
+
             #Set domain variable to determine if single or multiple domains need to be tested
             try {
                 if ($Domain) {
@@ -164,7 +164,7 @@ Function Start-ADEnum {
                     }
                 }
             }
-        
+
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
@@ -181,7 +181,7 @@ Function Start-ADEnum {
 
             #Encryption type array used in converting number values in users/computer msDS-SupportedEncryptionTypes attribute
             $EncryptionTypes = @{
-                "1"  = "DES_CRC"                
+                "1"  = "DES_CRC"
                 "2"  = "DES_MD5"
                 "3"  = "DES_CRC,DES_MD5"
                 "4"  = "RC4"
@@ -316,7 +316,24 @@ Function Start-ADEnum {
             )
 
             foreach ($Group in $Groups) {
-                Get-NetGroupMember $Group -Domain $Domain -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
+                $GroupMembers = Get-NetGroupMember $Group -Domain $Domain -Recurse
+
+                foreach ($GroupMember in $GroupMembers) {
+                    $GroupProperties = [ordered] @{
+                        'GroupDomain'             = $GroupMember.GroupDomain;
+                        'GroupName'               = $GroupMember.GroupName;
+                        'GroupDistinguishedName'  = $GroupMember.GroupDistinguishedName;
+                        'MemberDomain'            = $GroupMember.MemberDomain;
+                        'MemberName'              = $GroupMember.MemberName;
+                        'MemberDistinguishedName' = $GroupMember.MemberDistinguishedName;
+                        'MemberObjectClass'       = $GroupMember.MemberObjectClass;
+                        'MemberSID'               = $GroupMember.MemberSID;
+                        'UserAccountControl'      = (Get-NetUser -Identity ($GroupMember.MemberName) -Properties *).useraccountcontrol;
+                    }
+
+                    $object = New-Object -TypeName PSObject -Property $GroupProperties
+                    $object | Export-Csv ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation -Append
+                }
             }
 
             #Dump Trust details specifically looking for TGT delegation settings
@@ -421,14 +438,224 @@ Function Start-ADEnum {
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\Microsoft Services\ADCS\"
 
+            #Importing needed modules
+            Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
+
             #Identify instances of Active Directory Certificate Service
             $RootDSE = "DC=$($Domain.Replace('.', ',DC='))"
             $CAs = ([ADSI]"LDAP://CN=Enrollment Services,CN=Public Key Services,CN=Services,CN=Configuration,$RootDSE").Children
 
-            #Dumping list of available certificates
+            $CertTemplates = @()
+
+            # Dumping list of available certificates and adding to array
             foreach ($CA in $CAs) {
-                Write-Host -ForegroundColor Green "[+] Extracting a list of available certificates for $($CA.displayName)"
-                $CA.certificateTemplates | Out-File ($Folder, $Domain + "_" + $CA.displayName + "_" + "available_certs.txt" -join "")
+                $CertTemplates += $CA.certificateTemplates
+            }
+
+
+            $Certs = @()
+            foreach ($CertTemplate in $CertTemplates) {
+                $Certs += ([ADSI]"LDAP://CN=$CertTemplate,CN=Certificate Templates,CN=Public Key Services,CN=Services,CN=Configuration,$RootDSE")
+            }
+
+            # Convert Application Policy OID numbers to certificate types
+            $AppPolicy = @{
+                '1.3.6.1.5.5.7.3.1'        = 'Server Authentication'
+                '1.3.6.1.5.5.7.3.3'        = 'Code Signing'
+                '1.3.6.1.5.5.7.3.2'        = 'Client Authentication'
+                '1.3.6.1.4.1.311.54.1.2'   = 'Remote Desktop'
+                '1.3.6.1.4.1.311.76.6.1'   = 'Windows Update'
+                '1.3.6.1.4.1.311.10.3.25'  = 'Windows Third Party Application Component'
+                '1.3.6.1.4.1.311.10.3.23'  = 'Windows TCB Component'
+                '1.3.6.1.4.1.311.76.3.1'   = 'Windows Store'
+                '1.3.6.1.4.1.311.10.3.26'  = 'Windows Software Extension Verification'
+                '1.3.6.1.4.1.311.10.3.21'  = 'Windows RT Verification'
+                '1.3.6.1.4.1.311.10.3.20'  = 'Windows Kits Component'
+                '1.3.6.1.4.1.311.60.3.3'   = 'No OCSP Failover to CRL'
+                '1.3.6.1.4.1.311.60.3.2'   = 'Auto Update End Revocation'
+                '1.3.6.1.4.1.311.60.3.1'   = 'Auto Update CA Revocation'
+                '1.3.6.1.4.1.311.10.3.19'  = 'Revoked List Signer'
+                '1.3.6.1.4.1.311.10.3.24'  = 'Protected Process Verification'
+                '1.3.6.1.4.1.311.10.3.22'  = 'Protected Process Light Verification'
+                '2.23.133.8.2'             = 'Platform Certificate'
+                '1.3.6.1.4.1.311.76.8.1'   = 'Microsoft Publisher'
+                '1.3.6.1.4.1.311.6.1.1'    = 'Kernel Mode Code Signing'
+                '1.3.6.1.4.1.311.61.5.1'   = 'HAL Extension'
+                '2.23.133.8.1'             = 'Endorsement Key Certificate'
+                '1.3.6.1.4.1.311.61.4.1'   = 'Early Launch Antimalware Driver'
+                '1.3.6.1.4.1.311.76.5.1'   = 'Dynamic Code Generator'
+                '1.3.6.1.4.1.311.64.1.1'   = 'DNS Server Trust'
+                '1.3.6.1.4.1.311.80.1'     = 'Document Encryption'
+                '1.3.6.1.4.1.10.3.30'      = 'Disallowed List'
+                '1.3.6.1.4.1.311.47.1.1'   = 'System Health Authentication'
+                '1.3.6.1.4.1.311.20.2.2'   = 'IdMsKpScLogon'
+                '1.3.6.1.4.1.311.20.2.1'   = 'ENROLLMENT_AGENT'
+                '1.3.6.1.4.1.311.20.1'     = 'AUTO_ENROLL_CTL_USAGE'
+                '1.3.6.1.4.1.311.21.5'     = 'KP_CA_EXCHANGE'
+                '1.3.6.1.4.1.311.21.6'     = 'KP_KEY_RECOVERY_AGENT'
+                '1.3.6.1.5.5.7.3.4'        = 'PKIX_KP_EMAIL_PROTECTION'
+                '1.3.6.1.5.5.7.3.5'        = 'PKIX_KP_IPSEC_END_SYSTEM'
+                '1.3.6.1.5.5.7.3.6'        = 'PKIX_KP_IPSEC_TUNNEL'
+                '1.3.6.1.5.5.7.3.7'        = 'PKIX_KP_IPSEC_USER'
+                '1.3.6.1.5.5.7.3.8'        = 'PKIX_KP_TIMESTAMP_SIGNING'
+                '1.3.6.1.5.5.7.3.9'        = 'KP_OCSP_SIGNING'
+                '1.3.6.1.5.5.8.2.2'        = 'IPSEC_KP_IKE_INTERMEDIATE'
+                '1.3.6.1.4.1.311.10.3.1'   = 'KP_CTL_USAGE_SIGNING'
+                '1.3.6.1.4.1.311.10.3.2'   = 'KP_TIME_STAMP_SIGNING'
+                '1.3.6.1.4.1.311.10.3.5'   = 'WHQL_CRYPTO'
+                '1.3.6.1.4.1.311.10.3.6'   = 'NT5_CRYPTO'
+                '1.3.6.1.4.1.311.10.3.7'   = 'OEM_WHQL_CRYPTO'
+                '1.3.6.1.4.1.311.10.3.8'   = 'EMBEDDED_NT_CRYPTO'
+                '1.3.6.1.4.1.311.10.3.9'   = 'ROOT_LIST_SIGNER'
+                '1.3.6.1.4.1.311.10.3.10'  = 'KP_QUALIFIED_SUBORDINATION'
+                '1.3.6.1.4.1.311.10.3.11'  = 'KP_KEY_RECOVERY'
+                '1.3.6.1.4.1.311.10.3.12'  = 'KP_DOCUMENT_SIGNING'
+                '1.3.6.1.4.1.311.10.3.13'  = 'KP_LIFETIME_SIGNING'
+                '1.3.6.1.4.1.311.10.5.1'   = 'DRM'
+                '1.3.6.1.4.1.311.10.5.2'   = 'DRM_INDIVIDUALIZATION'
+                '1.3.6.1.4.1.311.10.6.1'   = 'LICENSES'
+                '1.3.6.1.4.1.311.10.6.2'   = 'LICENSE_SERVER'
+                '1.3.6.1.4.1.311.10.3.4'   = 'KP_EFS'
+                '1.3.6.1.4.1.311.10.3.4.1' = 'EFS_RECOVERY'
+                '1.3.6.1.4.1.311.21.19'    = 'DS_EMAIL_REPLICATION'
+                '1.3.6.1.4.1.311.10.12.1'  = 'ANY_APPLICATION_POLICY'
+            }
+            
+            #Convert name flags to human readable values
+            Function ConvertFrom-NameFlag {
+                [cmdletbinding()]
+                param (
+                    [Parameter(Mandatory = $True, ValueFromPipeline = $True)]
+                    [Int]
+                    $Value
+                )
+
+                Begin {
+                    $NameFlags = New-Object System.Collections.Specialized.OrderedDictionary
+                    $NameFlags.Add("EnrolleeSuppliesSubject", 1) #This flag instructs the client to supply subject information in the certificate request  
+                    $NameFlags.Add("OldCertSuppliesSubjectAndAltName", 8) #This flag instructs the client to reuse values of subject name and alternative subject name extensions from an existing valid certificate when creating a certificate renewal request. Windows Server 2003, Windows Server 2008 - this flag is not supported.
+                    $NameFlags.Add("EnrolleeSuppluiesAltSubject", 65536) #This flag instructs the client to supply subject alternate name information in the certificate request.  
+                    $NameFlags.Add("AltSubjectRequireDomainDNS", 4194304) #This flag instructs the CA to add the value of the requester's FQDN and NetBIOS name to the Subject Alternative Name extension of the issued certificate.  
+                    $NameFlags.Add("AltSubjectRequireDirectoryGUID", 16777216) #This flag instructs the CA to add the value of the objectGUID attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
+                    $NameFlags.Add("AltSubjectRequireUPN" , 33554432) #This flag instructs the CA to add the value of the UPN attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
+                    $NameFlags.Add("AltSubjectRequireEmail" , 67108864) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
+                    $NameFlags.Add("AltSubjectRequireDNS" , 134217728) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
+                    $NameFlags.Add("SubjectRequireDNSasCN" , 268435456) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory as the CN in the subject of the issued certificate.  
+                    $NameFlags.Add("SubjectRequireEmail" , 536870912) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory as the subject of the issued certificate.  
+                    $NameFlags.Add("SubjectRequireCommonName" , 1073741824) #This flag instructs the CA to set the subject name to the requestor's CN from Active Directory.  
+                    $NameFlags.Add("SubjectrequireDirectoryPath" , -2147483648) #This flag instructs the CA to set the subject name to the requestor's distinguished name (DN) from Active Directory.
+                }
+
+                Process {
+                    $NameFlagValues = New-Object System.Collections.Specialized.OrderedDictionary
+
+                    foreach ($NameFlag in $NameFlags.GetEnumerator()) {
+                        if ( ($Value -band $NameFlag.value) -eq $NameFlag.value) {
+                            $NameFlagValues.Add($NameFlag.Name, "$($NameFlag.Value)")
+                        }
+                    }
+
+                    (($NameFlagValues.GetEnumerator()).Name -join ',')
+                }
+            }
+            
+            #Convert enrollment flags to human readable values
+            Function ConvertFrom-EnrollmentFlag {
+                [cmdletbinding()]
+                param (
+                    [Parameter(Mandatory = $True, ValueFromPipeline = $True)]
+                    [Int]
+                    $Value
+                )
+
+                Begin {
+                    $EnrollmentFlags = New-Object System.Collections.Specialized.OrderedDictionary
+                    $EnrollmentFlags.Add("IncludeSymmetricAlgorithms", 1) #This flag instructs the client and server to include a Secure/Multipurpose Internet Mail Extensions (S/MIME) certificate extension, as specified in RFC4262, in the request and in the issued certificate.  
+                    $EnrollmentFlags.Add("CAManagerApproval", 2) #This flag instructs the CA to put all requests in a pending state.
+                    $EnrollmentFlags.Add("KraPublish", 4) #This flag instructs the CA to publish the issued certificate to the key recovery agent (KRA) container in Active Directory. 
+                    $EnrollmentFlags.Add("DsPublish", 8) #This flag instructs clients and CA servers to append the issued certificate to the userCertificate attribute, as specified in RFC4523, on the user object in Active Directory.
+                    $EnrollmentFlags.Add("AutoenrollmentCheckDsCert", 16) #This flag instructs clients not to do autoenrollment for a certificate based on this template if the user's userCertificate attribute (specified in RFC4523) in Active Directory has a valid certificate based on the same template.
+                    $EnrollmentFlags.Add("Autoenrollment", 32) #This flag instructs clients to perform autoenrollment for the specified template.
+                    $EnrollmentFlags.Add("ReenrollExistingCert", 64) #This flag instructs clients to sign the renewal request using the private key of the existing certificate
+                    $EnrollmentFlags.Add("RequireUserInteraction", 256) #This flag instructs the client to obtain user consent before attempting to enroll for a certificate that is based on the specified template.
+                    $EnrollmentFlags.Add("RemoveInvalidFromStore", 1024) #This flag instructs the autoenrollment client to delete any certificates that are no longer needed based on the specific template from the local certificate storage
+                    $EnrollmentFlags.Add("AllowEnrollOnBehalfOf", 2048) #This flag instructs the server to allow enroll on behalf of (EOBO) functionality.
+                    $EnrollmentFlags.Add("IncludeOcspRevNoCheck", 4096) #This flag instructs the server to not include revocation information and add the id-pkix-ocsp-nocheck extension, as specified in [RFC2560] section 4.2.2.2.1, to the certificate that is issued.
+                    $EnrollmentFlags.Add("ReuseKeyTokenFull", 8192) #This flag instructs the client to reuse the private key for a smart card–based certificate renewal if it is unable to create a new private key on the card
+                    $EnrollmentFlags.Add("NoRevocationInformation", 16384) #This flag instructs the server to not include revocation information in the issued certificate.
+                    $EnrollmentFlags.Add("BasicConstraintsInEndEntityCerts", 32768) #This flag instructs the server to include Basic Constraints extension in the end entity certificates.
+                    $EnrollmentFlags.Add("IgnoreEnrollOnReenrollment", 65536) #This flag instructs the CA to ignore the requirement for Enroll permissions on the template when processing renewal requests.
+                    $EnrollmentFlags.Add("IssuancePoliciesFromRequest", 131072) #This flag indicates that the certificate issuance policies to be included in the issued certificate come from the request rather than from the template. The template contains a list of all of the issuance policies that the request is allowed to specify; if the request contains policies that are not listed in the template, then the request is rejected.
+                }
+
+                Process {
+                    $NameFlagValues = New-Object System.Collections.Specialized.OrderedDictionary
+
+                    foreach ($NameFlag in $NameFlags.GetEnumerator()) {
+                        if ( ($Value -band $NameFlag.value) -eq $NameFlag.value) {
+                            $NameFlagValues.Add($NameFlag.Name, "$($NameFlag.Value)")
+                        }
+                    }
+
+                    (($NameFlagValues.GetEnumerator()).Name -join ',')
+                }
+            }
+            
+            #Convert private key flags to human readable values
+            Function ConvertFrom-PrivateKeyFlag {
+                [cmdletbinding()]
+                param (
+                    [Parameter(Mandatory = $True, ValueFromPipeline = $True)]
+                    [Int]
+                    $Value
+                )
+
+                Begin {
+                    $PrivateKeyFlags = New-Object System.Collections.Specialized.OrderedDictionary
+                    $PrivateKeyFlags.Add("RequireKeyArchival" , 1)
+                    $PrivateKeyFlags.Add("AllowKeyExport", 16)
+                    $PrivateKeyFlags.Add("RequireStrongProtection", 32)
+                    $PrivateKeyFlags.Add("ReuseKeysRenewal", 128)
+                    $PrivateKeyFlags.Add("UseLegacyProvider", 256)
+                    $PrivateKeyFlags.Add("TrustOnUse", 512)
+                    $PrivateKeyFlags.Add("ValidateCert", 1024)
+                    $PrivateKeyFlags.Add("ValidateKey", 2048)
+                    $PrivateKeyFlags.Add("Preferred", 4096)
+                    $PrivateKeyFlags.Add("Required", 8192)
+                    $PrivateKeyFlags.Add("WithoutPolicy", 16384)
+                }
+
+                Process {
+
+                    $PrivateKeyFlagValues = New-Object System.Collections.Specialized.OrderedDictionary
+
+                    foreach ($PrivateKeyFlag in $PrivateKeyFlags.GetEnumerator()) {
+                        if ( ($Value -band $PrivateKeyFlag.value) -eq $PrivateKeyFlag.value) {
+                            $PrivateKeyFlagValues.Add($PrivateKeyFlag.Name, "$($PrivateKeyFlag.Value)")
+                        }
+                    }
+
+                    (($PrivateKeyFlagValues.GetEnumerator()).Name -join ',')
+
+                }
+            }
+
+            # Extract values to csv
+            foreach ( $Cert in $Certs) {
+                $CertProperties = [ordered]@{
+                    'Name'               = ($Cert.displayName).ToString()
+                    'Certificate Type'   = ($AppPolicy[($Cert.'msPKI-Certificate-Application-Policy')] -join ', ').ToString()
+                    'Key Size'           = ($Cert.'msPKI-Minimal-Key-Size').ToString()
+                    'Subject Name Flags' = ($Cert.'msPKI-Certificate-Name-Flag'| ConvertFrom-NameFlag)
+                    'Enrollement Flags'  = ($Cert.'msPKI-Enrollment-Flag' | ConvertFrom-EnrollmentFlag)
+                    'Private Key Flags'  = ($Cert.'msPKI-Private-Key-Flag' | ConvertFrom-PrivateKeyFlag)
+                    'When Created'       = ($Cert.'whenCreated').ToString()
+                    # Identify enrollment privileges. Remove entries for Domain/Enterprise Admins
+                    'Enroll Privileges'  = ((Get-ObjectAcl -SearchBase $cert.Path | Where-Object { $_.SecurityIdentifier -notlike "*-51[2,9]" -and $_.ObjectAceType -eq "0e10c968-78fb-11d2-90d4-00c04f79dc55" }).SecurityIdentifier | ConvertFrom-SID) -join ', '
+                }
+
+                $object = New-Object -TypeName PSObject -Property $CertProperties
+                $object | Export-CSV ($Folder, $Domain + "_" + "certificates.csv" -join "") -Append -NoTypeInformation
             }
         }
 
@@ -483,7 +710,7 @@ Function Start-ADEnum {
             "ADCS" {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Green "[+] Starting AD Certificate Services Enum for $Domain"
-                    Start-Job -ScriptBlock $ADCS -ArgumentList $ClientName, $Path, $Domain -Name PrivExchange_$Domain | Out-Null
+                    Start-Job -ScriptBlock $ADCS -ArgumentList $ClientName, $Path, $Domain -Name ADCS_$Domain | Out-Null
                 }
             }
 
