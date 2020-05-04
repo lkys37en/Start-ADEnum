@@ -3,9 +3,6 @@ Function Start-PrereqCheck {
         # Windows 10 1809 build
         $1809Build = "17763"
 
-        # Windows 10 1903 build
-        $1903Build = "18362"
-
         # Get running Windows build
         $WindowsBuild = (Get-WmiObject -Class Win32_OperatingSystem).BuildNumber
 
@@ -29,9 +26,10 @@ Function Start-PrereqCheck {
             Write-Error -Message "The script requires elevation"
             break
         }
+        
         #Check if using correct version of Windows
-        if (!($WindowsBuild -eq $1809Build -OR $WindowsBuild -eq $1903Build)) {
-            throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or 1903"
+        if (($WindowsBuild -le $1809Build)) {
+            throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or above"
         }
 
         #Disabling Defender real time protection

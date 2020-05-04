@@ -71,6 +71,7 @@ Function Start-ADEnum {
         Start-PrereqCheck
 
         Import-Module C:\Tools\PowerSploit\Recon\PowerView.ps1
+        
         #Creating Path and evidence folder structure
         if ((Test-Path $Path) -eq $false) {
             try {
@@ -324,6 +325,7 @@ Function Start-ADEnum {
             $ClientName = $args[0]
             $Path = $args[1]
             $Domain = $args[2]
+            $Folder = "$Path\$ClientName\$Domain\Bloodhound"
 
             #Identifying nearest domain controller
             $DC = (Get-ADDomaincontroller -DomainName $Domain -Discover -NextClosestSite).Hostname
@@ -332,7 +334,6 @@ Function Start-ADEnum {
             Import-Module "C:\Tools\BloodHound\Ingestors\SharpHound.ps1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            $Folder = "$Path\$ClientName\$Domain\Bloodhound"
             Invoke-Bloodhound -Domain $Domain -CollectionMethod All -DomainController $DC -OutputDirectory $Folder -ZipFileName ($Domain + "_" + "Bloodhound.zip") 
         }
 

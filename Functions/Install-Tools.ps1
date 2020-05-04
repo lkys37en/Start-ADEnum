@@ -54,7 +54,7 @@ Function Install-Tools {
 
         switch ($Tool) {
             "PowerSploit" {
-                Write-Host -ForegroundColor Green "[+] Cloning PowerSploit into $ToolsFolder and switching to dev branch"
+                Write-Host -ForegroundColor Green "[+] Cloning PowerSploit Dev branch into $ToolsFolder"
                 Set-Location $ToolsFolder ; git clone -q $PowerSploitUrl;
                 Set-Location $ToolsFolder\PowerSploit; git checkout -q dev ; git pull -q
             }
