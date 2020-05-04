@@ -174,6 +174,9 @@ Function Start-ADEnum {
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\PowerView\"
 
+            #Identifying nearest domain controller
+            $DC = (Get-ADDomaincontroller -DomainName $Domain -Discover -NextClosestSite).Hostname
+
             $EncryptionTypes = @{
                 "1"  = "DES_CRC"                
                 "2"  = "DES_MD5"
@@ -190,7 +193,7 @@ Function Start-ADEnum {
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
             #Domain Policy
-            (Get-DomainPolicy -Domain $Domain).SystemAccess | Out-File ($Folder, $Domain + "_" + "Domain_Password_Policy.txt" -join "")
+            (Get-DomainPolicy -Domain $Domain -Server $DC).SystemAccess | Out-File ($Folder, $Domain + "_" + "Domain_Password_Policy.txt" -join "")
 
             #Forest Functional Level
             Get-NetForest | Out-File ($Folder, $Domain + "_" + "Forest_Functional_Level.txt" -join "")
@@ -199,34 +202,37 @@ Function Start-ADEnum {
             Get-NetDomain | Out-File ($Folder, $Domain + "_" + "Domain_Functional_Level.txt" -join "")
 
             #Krbtgt Password Last Set
-            Get-NetUser -Identity krbtgt | Out-File ($Folder, $Domain + "_" + "Krbtgt_Account.txt" -join "")
+            Get-NetUser -Identity krbtgt -Server $DC | Out-File ($Folder, $Domain + "_" + "Krbtgt_Account.txt" -join "")
 
             #Gather a list of Domain Controllers
-            Get-NetDomainController -Domain $Domain | Select-Object -Property Forest, Domain, Name, SiteName, IPAddress | Export-CSV ($Folder, $Domain + "_" + "DomainControllers.csv" -join "") -NoTypeInformation
+            Get-NetDomainController -Domain $Domain -Server $DC | Select-Object -Property Forest, Domain, Name, SiteName, IPAddress | Export-CSV ($Folder, $Domain + "_" + "DomainControllers.csv" -join "") -NoTypeInformation
 
             #AD Sites
-            Get-DomainSite -Domain $Domain | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSites.csv" -join "") -NoTypeInformation
+            Get-DomainSite -Domain $Domain -Server $DC | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSites.csv" -join "") -NoTypeInformation
 
             #AD SiteSubnets
-            Get-DomainSubnet -Domain $Domain | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSubnets.csv" -join "") -NoTypeInformation
+            Get-DomainSubnet -Domain $Domain -Server $DC | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSubnets.csv" -join "") -NoTypeInformation
 
             #Dump DNS Records
-            Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
+            $DNSZones = (Get-DomainDNSZone).Name
+            foreach ($Zone in $DNSZones){
+                Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain -Server $DC | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
+            }
 
             #Get a list of shares
-            Get-DomainFileServer -Domain $Domain | Out-File ($Folder, $Domain + "_" + "Fileservers.txt" -join "")
+            Get-DomainFileServer -Domain $Domain -Server $DC | Out-File ($Folder, $Domain + "_" + "Fileservers.txt" -join "")
 
             #Get a list of DFS Shares
-            Get-DomainDFSShare -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
+            Get-DomainDFSShare -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
 
             #Get a list of OU's
-            Get-DomainOU -Domain $Domain | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
+            Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
-            Get-DomainUser -SPN -Domain $Domain | Get-DomainSPNTicket -OutputFormat hashcat | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
+            Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
 
             #Dumping all AD user objects
-            $Users = Get-DomainUser * -Domain $Domain
+            $Users = Get-DomainUser * -Domain $Domain -Server $DC
 
             foreach ($User in $Users) {
                 $UserProperties = [ordered] @{
@@ -257,11 +263,10 @@ Function Start-ADEnum {
             }
 
             #Gather a list of foreign users
-            Get-DomainForeignUser -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
+            Get-DomainForeignUser -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
 
             #Dumping all AD computer objects
-            $Server = Get-ADDomainController -DomainName $Domain -Discover -NextClosestSite
-            $Computers = Get-DomainComputer * -Domain $Domain
+            $Computers = Get-DomainComputer * -Domain $Domain -Server $DC
 
             foreach ($Computer in $Computers) {
                 $ComputerProperties = [ordered]@{
@@ -292,9 +297,9 @@ Function Start-ADEnum {
             }
 
             #Gathering users from local groups
-            Find-DomainLocalGroupMember -ComputerDomain $Domain | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
-            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Desktop Users" | Export-CSV ($Folder, $Domain + "_" + "RDP_Users.csv" -join "") -NoTypeInformation
-            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Management Users" | Export-CSV ($Folder, $Domain + "_" + "Winrm_Users.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Desktop Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "RDP_Users.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Management Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "Winrm_Users.csv" -join "") -NoTypeInformation
 
             #Gathering members of specific domain groups
             $Groups = @(
@@ -308,11 +313,11 @@ Function Start-ADEnum {
                 "Hyper-V Administrators"
             )
             foreach ($Group in $Groups) {
-                Get-NetGroupMember $Group -Domain $Domain -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
+                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
             }
 
             #Dump Trust details specifically looking for TGT delegation settings
-            Get-ADTrust -Filter * -Server $Server.IPv4Address | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
+            Get-ADTrust -Filter * -Server $DC.Value | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
         }
 
         $BloodhoundScriptBlock = {
@@ -320,12 +325,15 @@ Function Start-ADEnum {
             $Path = $args[1]
             $Domain = $args[2]
 
+            #Identifying nearest domain controller
+            $DC = (Get-ADDomaincontroller -DomainName $Domain -Discover -NextClosestSite).Hostname
+
             #Importing needed modules
             Import-Module "C:\Tools\BloodHound\Ingestors\SharpHound.ps1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
             $Folder = "$Path\$ClientName\$Domain\Bloodhound"
-            Set-Location $Folder ; Invoke-Bloodhound -Domain $Domain -CollectionMethod All -SkipPing -ZipFileName ($Domain + "_" + "Bloodhound.zip")
+            Invoke-Bloodhound -Domain $Domain -CollectionMethod All -DomainController $DC -OutputDirectory $Folder -ZipFileName ($Domain + "_" + "Bloodhound.zip") 
         }
 
         $GPOReportScriptBlock = {
@@ -338,8 +346,8 @@ Function Start-ADEnum {
             Import-Module "C:\Tools\Grouper\grouper.psm1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            Get-GPOReport -All -ReportType xml -Domain $Domain -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "")
-            Get-GPOReport -All -ReportType Html -Domain $Domain -Path ($Folder, $Domain + "_" + "GPOReport.html" -join "")
+            Get-GPOReport -All -ReportType xml -Domain $Domain -Server $DC.value -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "")
+            Get-GPOReport -All -ReportType Html -Domain $Domain -Server $DC.value -Path ($Folder, $Domain + "_" + "GPOReport.html" -join "")
             Invoke-AuditGPOReport -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "") -Level 3 | Out-File ($Folder, $Domain + "_" + "GrouperResults.txt" -join "")
         }
 
