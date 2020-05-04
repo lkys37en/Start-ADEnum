@@ -179,9 +179,8 @@ Function Start-ADEnum {
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\PowerView\"
 
-            #Encryption type array used in converting number values in users/computer msDS-SupportedEncryptionTypes attribute
             $EncryptionTypes = @{
-                "1"  = "DES_CRC"
+                "1"  = "DES_CRC"                
                 "2"  = "DES_MD5"
                 "3"  = "DES_CRC,DES_MD5"
                 "4"  = "RC4"
@@ -195,44 +194,50 @@ Function Start-ADEnum {
             #Importing needed modules
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            #Dump domain policy
-            (Get-DomainPolicy -Domain $Domain).SystemAccess | Out-File ($Folder, $Domain + "_" + "Domain_Password_Policy.txt" -join "")
+            #Identifying nearest domain controller
+            $DC = (Get-NetDomain -Domain $Domain).PdcRoleOwner.Name
 
-            #Dump forest functional level
+            #Domain Policy
+            (Get-DomainPolicy -Domain $Domain -Server $DC).SystemAccess | Out-File ($Folder, $Domain + "_" + "Domain_Password_Policy.txt" -join "")
+
+            #Forest Functional Level
             Get-NetForest | Out-File ($Folder, $Domain + "_" + "Forest_Functional_Level.txt" -join "")
 
-            #Dump domain function level
+            #Domain Function Level
             Get-NetDomain | Out-File ($Folder, $Domain + "_" + "Domain_Functional_Level.txt" -join "")
 
             #Krbtgt Password Last Set
-            Get-NetUser -Identity krbtgt | Out-File ($Folder, $Domain + "_" + "Krbtgt_Account.txt" -join "")
+            Get-NetUser -Identity krbtgt -Server $DC | Out-File ($Folder, $Domain + "_" + "Krbtgt_Account.txt" -join "")
 
             #Gather a list of Domain Controllers
-            Get-NetDomainController -Domain $Domain | Select-Object -Property Forest, Domain, Name, SiteName, IPAddress | Export-CSV ($Folder, $Domain + "_" + "DomainControllers.csv" -join "") -NoTypeInformation
+            Get-NetDomainController -Domain $Domain -Server $DC | Select-Object -Property Forest, Domain, Name, SiteName, IPAddress | Export-CSV ($Folder, $Domain + "_" + "DomainControllers.csv" -join "") -NoTypeInformation
 
-            #Dump AD Sites
-            Get-DomainSite -Domain $Domain | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSites.csv" -join "") -NoTypeInformation
+            #AD Sites
+            Get-DomainSite -Domain $Domain -Server $DC | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSites.csv" -join "") -NoTypeInformation
 
             #AD SiteSubnets
-            Get-DomainSubnet -Domain $Domain | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSubnets.csv" -join "") -NoTypeInformation
+            Get-DomainSubnet -Domain $Domain -Server $DC | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSubnets.csv" -join "") -NoTypeInformation
 
             #Dump DNS Records
-            Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
+            $DNSZones = (Get-DomainDNSZone).Name
+            foreach ($Zone in $DNSZones){
+                Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain -Server $DC | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
+            }
 
             #Get a list of shares
-            Get-DomainFileServer -Domain $Domain | Out-File ($Folder, $Domain + "_" + "Fileservers.txt" -join "")
+            Get-DomainFileServer -Domain $Domain -Server $DC | Out-File ($Folder, $Domain + "_" + "Fileservers.txt" -join "")
 
             #Get a list of DFS Shares
-            Get-DomainDFSShare -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
+            Get-DomainDFSShare -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
 
-            #Dump a list of OU's
-            Get-DomainOU -Domain $Domain | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
+            #Get a list of OU's
+            Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
-            Get-DomainUser -SPN -Domain $Domain | Get-DomainSPNTicket -OutputFormat hashcat | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
+            Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
 
             #Dumping all AD user objects
-            $Users = Get-DomainUser * -Domain $Domain
+            $Users = Get-DomainUser * -Domain $Domain -Server $DC
 
             foreach ($User in $Users) {
                 $UserProperties = [ordered] @{
@@ -252,30 +257,28 @@ Function Start-ADEnum {
                     'accountexpires'                           = $User.accountexpires;
                     'admincount'                               = $User.admincount;
                     'useraccountcontrol'                       = $User.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()] };
-                    'serviceprincipalname'                     = if ($User.serviceprincipalname -ne '') { (($User.serviceprincipalname) -join ',') };
-                    'msDS-AllowedToDelegateTo'                 = if ($User.'msDS-AllowedToDelegateTo' -ne '') { (($User.'msDS-AllowedToDelegateTo') -join ',') };
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
+                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()]};
+                    'serviceprincipalname'                     = (($User.serviceprincipalname) -join ',');
+                    'msDS-AllowedToDelegateTo'                 = (($User.'msDS-AllowedToDelegateTo') -join ',');
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
                 }
 
                 $object = New-Object -TypeName PSObject -Property $UserProperties
                 $object | Export-Csv ($Folder, $Domain + "_" + "Users.csv" -join "") -NoTypeInformation -Append
             }
 
-            #Dumping list of AD Groups
-            Get-NetGroup -Identity * | Select-Object -Property samaccountname, description, objectsid, grouptype | Export-CSV ($Folder, $Domain + "_" + "Groups.csv" -join "") -NoTypeInformation
-
-            #Dumping a list of foreign users
-            Get-DomainForeignUser -Domain $Domain | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
+            #Gather a list of foreign users
+            Get-DomainForeignUser -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
 
             #Dumping all AD computer objects
-            $Computers = Get-DomainComputer * -Domain $Domain
+            $Computers = Get-DomainComputer * -Domain $Domain -Server $DC
 
             foreach ($Computer in $Computers) {
                 $ComputerProperties = [ordered]@{
                     'Name'                                     = $Computer.name;
                     'UserName'                                 = $Computer.samaccountname
-                    'IPv4Address'                              = ($Computer.dnshostname | Get-IPAddress).IPAddress
+                    'Enabled'                                  = (Get-ADComputer -Identity $Computer.Name -Server $Server.IPv4Address).Enabled;
+                    'IPv4Address'                              = (Get-ADComputer -Identity $Computer.Name -Properties IPv4Address -Server $Server.IPv4Address).IPv4Address;
                     'DNSHostname'                              = $Computer.dnshostname;
                     'Operating System'                         = $Computer.operatingsystem;
                     'OS Version'                               = $Computer.operatingsystemversion;
@@ -286,12 +289,12 @@ Function Start-ADEnum {
                     'Whencreated'                              = $Computer.whencreated;
                     'lastlogontimestamp'                       = $Computer.lastlogontimestamp;
                     'useraccountcontrol'                       = $Computer.useraccountcontrol;
+                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()]};
+                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain};
                     'ms-mcs-admpwd'                            = $Computer.'ms-mcs-admpwd';
-                    'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'));
-                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()] };
-                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain };
-                    'msDS-AllowedToDelegateTo'                 = if ($Computer.'msDS-AllowedToDelegateTo' -ne '') { (($Computer.'msDS-AllowedToDelegateTo') -join ',') };
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
+                    'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'))
+                    'msDS-AllowedToDelegateTo'                 = (($Computer.'msDS-AllowedToDelegateTo') -join ',');
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
                 }
 
                 $object = New-Object -TypeName PSObject -Property $ComputerProperties
@@ -299,9 +302,9 @@ Function Start-ADEnum {
             }
 
             #Gathering users from local groups
-            Find-DomainLocalGroupMember -ComputerDomain $Domain | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
-            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Desktop Users" | Export-CSV ($Folder, $Domain + "_" + "RDP_Users.csv" -join "") -NoTypeInformation
-            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Management Users" | Export-CSV ($Folder, $Domain + "_" + "Winrm_Users.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Desktop Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "RDP_Users.csv" -join "") -NoTypeInformation
+            Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Management Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "Winrm_Users.csv" -join "") -NoTypeInformation
 
             #Gathering members of specific domain groups
             $Groups = @(
@@ -314,31 +317,12 @@ Function Start-ADEnum {
                 "DnsAdmins"
                 "Hyper-V Administrators"
             )
-
             foreach ($Group in $Groups) {
-                $GroupMembers = Get-NetGroupMember $Group -Domain $Domain -Recurse
-
-                foreach ($GroupMember in $GroupMembers) {
-                    $GroupProperties = [ordered] @{
-                        'GroupDomain'             = $GroupMember.GroupDomain;
-                        'GroupName'               = $GroupMember.GroupName;
-                        'GroupDistinguishedName'  = $GroupMember.GroupDistinguishedName;
-                        'MemberDomain'            = $GroupMember.MemberDomain;
-                        'MemberName'              = $GroupMember.MemberName;
-                        'MemberDistinguishedName' = $GroupMember.MemberDistinguishedName;
-                        'MemberObjectClass'       = $GroupMember.MemberObjectClass;
-                        'MemberSID'               = $GroupMember.MemberSID;
-                        'UserAccountControl'      = (Get-NetUser -Identity ($GroupMember.MemberName) -Properties *).useraccountcontrol;
-                    }
-
-                    $object = New-Object -TypeName PSObject -Property $GroupProperties
-                    $object | Export-Csv ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation -Append
-                }
+                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
             }
 
             #Dump Trust details specifically looking for TGT delegation settings
-            $Server = Get-ADDomainController -DomainName $Domain -Discover -NextClosestSite
-            Get-ADTrust -Filter * -Server $Server.IPv4Address | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "")
+            Get-ADTrust -Filter * -Server $DC.Value | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
         }
 
         #Running Bloodhound commands
@@ -346,13 +330,15 @@ Function Start-ADEnum {
             $ClientName = $args[0]
             $Path = $args[1]
             $Domain = $args[2]
+            $Folder = "$Path\$ClientName\$Domain\Bloodhound"
 
             #Importing needed modules
             Import-Module "C:\Tools\BloodHound\Ingestors\SharpHound.ps1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            $Folder = "$Path\$ClientName\$Domain\Bloodhound"
-            Set-Location $Folder ; Invoke-Bloodhound -Domain $Domain -CollectionMethod All -SkipPing -ZipFileName ($Domain + "_" + "Bloodhound.zip")
+            $DC = (Get-NetDomain -Domain $Domain).PdcRoleOwner.Name
+
+            Start-Process C:\Tools\BloodHound\Ingestors\SharpHound.exe -ArgumentList "-d $Domain -c All --domaincontroller $DC --outputdirectory $Folder"
         }
 
         #Running RSAT GPO Get-GPOReport commands
@@ -366,8 +352,11 @@ Function Start-ADEnum {
             Import-Module "C:\Tools\Grouper\grouper.psm1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            Get-GPOReport -All -ReportType xml -Domain $Domain -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "")
-            Get-GPOReport -All -ReportType Html -Domain $Domain -Path ($Folder, $Domain + "_" + "GPOReport.html" -join "")
+            $DC = (Get-NetDomain -Domain $Domain).PdcRoleOwner.Name
+
+            Start-Transcript -OutputDirectory $Folder
+            Get-GPOReport -All -ReportType xml -Domain $Domain -Server $DC -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "")
+            Get-GPOReport -All -ReportType Html -Domain $Domain -Server $DC -Path ($Folder, $Domain + "_" + "GPOReport.html" -join "")
             Invoke-AuditGPOReport -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "") -Level 3 | Out-File ($Folder, $Domain + "_" + "GrouperResults.txt" -join "")
         }
 
