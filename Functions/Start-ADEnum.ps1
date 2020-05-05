@@ -47,7 +47,7 @@ Function Start-ADEnum {
 
         [Parameter(Mandatory = $false)]
         [String[]]
-        $Domain,
+        $Domains,
 
         [Parameter(Mandatory = $True)]
         [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PrivExchange", "All")]
@@ -103,7 +103,7 @@ Function Start-ADEnum {
             }
 
             try {
-                if ($Domain) {
+                if ($Domains) {
                     $Domains = $Domain
                 }
 
@@ -142,7 +142,7 @@ Function Start-ADEnum {
 
             #Set domain variable to determine if single or multiple domains need to be tested
             try {
-                if ($Domain) {
+                if ($Domains) {
                     $Domains = $Domain
                 }
 
@@ -157,6 +157,7 @@ Function Start-ADEnum {
                         Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
                         mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
                     }
+                    
                     foreach ($folder in $folders) {
                         if ((Test-Path "$Path\$ClientName\$Domain\$folder") -eq $false) {
                             mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
@@ -277,8 +278,8 @@ Function Start-ADEnum {
                 $ComputerProperties = [ordered]@{
                     'Name'                                     = $Computer.name;
                     'UserName'                                 = $Computer.samaccountname
-                    'Enabled'                                  = (Get-ADComputer -Identity $Computer.Name -Server $Server.IPv4Address).Enabled;
-                    'IPv4Address'                              = (Get-ADComputer -Identity $Computer.Name -Properties IPv4Address -Server $Server.IPv4Address).IPv4Address;
+                    'Enabled'                                  = (Get-ADComputer -Identity $Computer.Name -Server $DC).Enabled;
+                    'IPv4Address'                              = (Get-ADComputer -Identity $Computer.Name -Properties IPv4Address -Server $DC).IPv4Address;
                     'DNSHostname'                              = $Computer.dnshostname;
                     'Operating System'                         = $Computer.operatingsystem;
                     'OS Version'                               = $Computer.operatingsystemversion;
@@ -353,8 +354,6 @@ Function Start-ADEnum {
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
             $DC = (Get-NetDomain -Domain $Domain).PdcRoleOwner.Name
-
-            Start-Transcript -OutputDirectory $Folder
             Get-GPOReport -All -ReportType xml -Domain $Domain -Server $DC -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "")
             Get-GPOReport -All -ReportType Html -Domain $Domain -Server $DC -Path ($Folder, $Domain + "_" + "GPOReport.html" -join "")
             Invoke-AuditGPOReport -Path ($Folder, $Domain + "_" + "GPOReport.xml" -join "") -Level 3 | Out-File ($Folder, $Domain + "_" + "GrouperResults.txt" -join "")

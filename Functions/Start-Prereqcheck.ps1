@@ -28,7 +28,7 @@ Function Start-PrereqCheck {
         }
         
         #Check if using correct version of Windows
-        if (($WindowsBuild -le $1809Build)) {
+        if (($WindowsBuild -lt $1809Build)) {
             throw "[-] Current buidnumber $WindowsBuild is not compatible. Please upgrade to Windows 10 1809 or above"
         }
 
