@@ -84,9 +84,9 @@ Gathers a list of all domain/forest by enumerating trusts and runs all scans aga
 
 Runs all scans against lkylabs.com and corp.lkylabs.com.
 
-    Start-ADEnum -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com  -Scan All
+    Start-ADEnum -ClientName lkylabs -Path C:\Projects -Domains lkylabs.com  -Scan All
     
 
 Runs PowerView and Bloodhound scans against lkylabs.com and corp.lkylabs.com domains.
     
-    Start-ADEnum -ClientName lkylabs -Path C:\Projects -Domain lkylabs.com,corp.lkylabs.com  -Scan PowerView,Bloodhound
+    Start-ADEnum -ClientName lkylabs -Path C:\Projects -Domains lkylabs.com,corp.lkylabs.com  -Scan PowerView,Bloodhound
