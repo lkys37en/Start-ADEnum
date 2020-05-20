@@ -13,6 +13,7 @@ Function Install-Tools {
         $PowerSploitUrl = "https://github.com/PowershellMafia/PowerSploit.git"
         $BloodHountUrl = "https://github.com/BloodHoundAD/BloodHound.git"
         $GrouperUrl = "https://github.com/l0ss/Grouper.git"
+        $PowerUpSQLUrl= "https://github.com/NetSPI/PowerUpSQL.git"
 
         #Chocolately tools variable
         $ChocoTools = @(
@@ -81,7 +82,7 @@ Function Install-Tools {
             }
 
             "BloodHound" {
-                if (!(Test-Path "$ToolsFolder\BloodHound\Ingestors\SharpHound.ps1")) {
+                if (!(Test-Path "$ToolsFolder\BloodHound")) {
                     try {
                         #Downloads PowerSpoit Dev branch if the PowerSploit directory doesn't exist
                         Write-Host -ForegroundColor Green "[+] Cloning BloodHound directory to $ToolsFolder"
@@ -114,6 +115,24 @@ Function Install-Tools {
                 else {
                     Write-Host -ForegroundColor Green "[+] Grouper already downloaded, performing git pull"
                     Set-Location "$ToolsFolder\Grouper" ; git pull | Out-Null
+                }
+            }
+
+            "PowerUPSQL" {
+                if (!(Test-Path "$ToolsFolder\PowerUpSQL")) {
+                    try {
+                        Write-Host -ForegroundColor Green "[+] Cloning PowerUPSQL directory to $ToolsFolder"
+                        Set-Location $ToolsFolder ; git clone -q $PowerUpSQLUrl
+                    }
+
+                    catch {
+                        throw "An error has occurred  $($_.Exception.Message)"
+                    }
+                }
+                
+                else {
+                    Write-Host -ForegroundColor Green "[+] PowerUPSQL already downloaded, performing git pull"
+                    Set-Location "$ToolsFolder\PowerUpSQL" ; git pull | Out-Null
                 }
             }
 

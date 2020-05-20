@@ -14,8 +14,8 @@ Function Start-ADEnum {
     .PARAMETER Path
     Enter path where evidence will be placed. If folder doesn't already exist, the script will create it.
 
-    .PARAMETER Domain
-    Enter individual domain to enumerate or let the script automatically identify all vailable domains via trust enumeration.
+    .PARAMETER Domains
+    Enter individual domains to enumerate or let the script automatically identify all vailable domains via trust enumeration.
 
     .PARAMETER Scan
     Enter individual scan(s) to perform.
@@ -103,11 +103,7 @@ Function Start-ADEnum {
             }
 
             try {
-                if ($Domains) {
-                    $Domains = $Domain
-                }
-
-                else {
+                if (!($Domains)) {
                     Write-Host -ForegroundColor Green "[*] Collecting a list of domains.."
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
                     if ($Domains -eq $null) { $Domains = (Get-NetDomain).Name }
@@ -116,7 +112,7 @@ Function Start-ADEnum {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
                     mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
-
+    
                     foreach ($folder in $folders) {
                         mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
                     }
@@ -142,26 +138,18 @@ Function Start-ADEnum {
 
             #Set domain variable to determine if single or multiple domains need to be tested
             try {
-                if ($Domains) {
-                    $Domains = $Domain
-                }
-
-                else {
+                if (!($Domains)) {
                     Write-Host -ForegroundColor Green "[*] Collecting a list of domains.."
                     $Domains = (Get-DomainTrustMapping -API).TargetName | Select-Object -Unique
                     if ($Domains -eq $null) { $Domains = (Get-NetDomain).Name }
                 }
 
                 foreach ($Domain in $Domains) {
-                    if ((Test-Path -Path $Path\$ClientName\$Domain) -eq $false) {
-                        Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
-                        mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
-                    }
-                    
+                    Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
+                    mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
+
                     foreach ($folder in $folders) {
-                        if ((Test-Path "$Path\$ClientName\$Domain\$folder") -eq $false) {
-                            mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
-                        }
+                        mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
                     }
                 }
             }
@@ -220,8 +208,8 @@ Function Start-ADEnum {
             Get-DomainSubnet -Domain $Domain -Server $DC | Select-Object -Property name, siteobject, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "ADSubnets.csv" -join "") -NoTypeInformation
 
             #Dump DNS Records
-            $DNSZones = (Get-DomainDNSZone).Name
-            foreach ($Zone in $DNSZones){
+            $DNSZones = (Get-DomainDNSZone -Domain $Domain -Server $DC).Name
+            foreach ($Zone in $DNSZones) {
                 Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain -Server $DC | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
             }
 
@@ -258,10 +246,10 @@ Function Start-ADEnum {
                     'accountexpires'                           = $User.accountexpires;
                     'admincount'                               = $User.admincount;
                     'useraccountcontrol'                       = $User.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()]};
+                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()] };
                     'serviceprincipalname'                     = (($User.serviceprincipalname) -join ',');
                     'msDS-AllowedToDelegateTo'                 = (($User.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $UserProperties
@@ -290,12 +278,12 @@ Function Start-ADEnum {
                     'Whencreated'                              = $Computer.whencreated;
                     'lastlogontimestamp'                       = $Computer.lastlogontimestamp;
                     'useraccountcontrol'                       = $Computer.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') {$EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()]};
-                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain};
+                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()] };
+                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain };
                     'ms-mcs-admpwd'                            = $Computer.'ms-mcs-admpwd';
                     'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'))
                     'msDS-AllowedToDelegateTo'                 = (($Computer.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne ''){(New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain};
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $ComputerProperties
@@ -413,6 +401,7 @@ Function Start-ADEnum {
                 "15.00.0620.029" = "Exchange Server 2013 CU1, Vulnerable to PrivExchange!"
                 "15.00.0516.032" = "Exchange Server 2013 RTM, Vulnerable to PrivExchange!"
             }
+            
             $RootDSE = "DC=$($Domain.Replace('.', ',DC='))"
             $CN = (([ADSI]"LDAP://cn=Microsoft Exchange,cn=Services,cn=Configuration,$RootDSE")).Children
             $ExchangeVersion = ($CN).msExchProductID
@@ -634,7 +623,7 @@ Function Start-ADEnum {
                     'Name'               = ($Cert.displayName).ToString()
                     'Certificate Type'   = ($AppPolicy[($Cert.'msPKI-Certificate-Application-Policy')] -join ', ').ToString()
                     'Key Size'           = ($Cert.'msPKI-Minimal-Key-Size').ToString()
-                    'Subject Name Flags' = ($Cert.'msPKI-Certificate-Name-Flag'| ConvertFrom-NameFlag)
+                    'Subject Name Flags' = ($Cert.'msPKI-Certificate-Name-Flag' | ConvertFrom-NameFlag)
                     'Enrollement Flags'  = ($Cert.'msPKI-Enrollment-Flag' | ConvertFrom-EnrollmentFlag)
                     'Private Key Flags'  = ($Cert.'msPKI-Private-Key-Flag' | ConvertFrom-PrivateKeyFlag)
                     'When Created'       = ($Cert.'whenCreated').ToString()
