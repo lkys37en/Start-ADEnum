@@ -145,11 +145,15 @@ Function Start-ADEnum {
                 }
 
                 foreach ($Domain in $Domains) {
+                    if ((Test-Path $Path\$ClientName\$Domain) -eq $false) {
                     Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
                     mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
+                    }
 
                     foreach ($folder in $folders) {
+                        if ((Test-Path $Path\$ClientName\$Domain) -eq $false) {
                         mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
+                        }
                     }
                 }
             }
@@ -223,7 +227,28 @@ Function Start-ADEnum {
             Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
-            Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
+            $Groups = @(
+                "Domain Admins"
+                "Enterprise Admins"
+                "Administrators"
+            )
+            
+            foreach ($Group in $Groups) {
+                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse -OutVariable SensitiveUser 
+            }
+
+            foreach ($SPN in $SPNS) {
+                $UserProperties = [ordered] @{
+                    'SamAccountName'                           = $SPN.samaccountname;
+                    'ServicePrincipalName'                     = (($SPN.serviceprincipalname) -join ',');
+                                                                # Determine if user is a member of AD sensitive groups
+                    'SensitiveUser'                             = if ($SPN.samaccountname | Where-Object {$SensitiveUser.MemberName -like $_}) {Write-Output "Yes"} ;
+                    'Hash'                                     = ($SPN.Hash)
+                }
+
+                $object = New-Object -TypeName PSObject -Property $UserProperties
+                $object | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
+            }
 
             #Dumping all AD user objects
             $Users = Get-DomainUser * -Domain $Domain -Server $DC
@@ -671,11 +696,42 @@ Function Start-ADEnum {
             (Get-ChildItem $Folder).FullName | Remove-Item -Include *.txt
         }
 
+        #Running PowerUPSQL commands
+        $PowerUPSQLScriptBlock = {
+            $ClientName = $args[0]
+            $Path = $args[1]
+            $Domain = $args[2]
+            $Folder = "$Path\$ClientName\$Domain\PowerUPSQL\"
+
+            #Importing needed modules
+            Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
+            Import-Module "C:\tools\PowerUpSQL\PowerUpSQL.psm1"
+
+            $MSSQLServers = Get-SQLInstanceDomain
+
+            foreach ($Server in $MSSQLServers) {
+                $MSSQLProperties = [ordered]@{
+                    'Description'   = $Server.Description
+                    'ComputerName'  = $Server.ComputerName
+                    'IPAddress'     = ($Server.ComputerName | Get-IPAddress).IPAddress
+                    'Instance'      = $Server.Instance
+                    'DomainAccount' = $Server.DomainAccount
+                    'Service'       = $Server.Service
+                    'Spn'           = $Server.SPN
+                }
+
+                $object = New-Object -TypeName PSObject -Property $MSSQLProperties
+                $object | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers.csv" -join "") -NoTypeInformation -Append
+            }
+        }
+
+
         switch ($Scan) {
             "All" {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Green "[+] Starting All AD Enum for $Domain"
                     Start-Job -ScriptBlock $PowerViewScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PowerView_$Domain | Out-Null
+                    Start-Job -ScriptBlock $PowerUPSQLScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PowerUPSQL_$Domain | Out-Null
                     Start-Job -ScriptBlock $PingCastleScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PingCastle_$Domain | Out-Null
                     Start-Job -ScriptBlock $BloodhoundScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name BloodHound_$Domain | Out-Null
                     Start-Job -ScriptBlock $GPOReportScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name GPOReport_$Domain | Out-Null
@@ -695,6 +751,13 @@ Function Start-ADEnum {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Green "[+] Starting PowerView Enum for $Domain"
                     Start-Job -ScriptBlock $PowerViewScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PowerView_$Domain | Out-Null
+                }
+            }
+
+            "PowerUPSQL" {
+                foreach ($Domain in $Domains) {
+                    Write-Host -ForegroundColor Green "[+] Starting PowerView Enum for $Domain"
+                    Start-Job -ScriptBlock $PowerUPSQLScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PowerUPSQL_$Domain | Out-Null
                 }
             }
 
