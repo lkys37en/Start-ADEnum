@@ -151,7 +151,7 @@ Function Start-ADEnum {
                     }
 
                     foreach ($folder in $folders) {
-                        if ((Test-Path $Path\$ClientName\$Domain) -eq $false) {
+                        if ((Test-Path $Path\$ClientName\$Domain\$folder) -eq $false) {
                         mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
                         }
                     }
@@ -173,7 +173,7 @@ Function Start-ADEnum {
             $Folder = "$Path\$ClientName\$Domain\PowerView\"
 
             $EncryptionTypes = @{
-                "1"  = "DES_CRC"                
+                "1"  = "DES_CRC"
                 "2"  = "DES_MD5"
                 "3"  = "DES_CRC,DES_MD5"
                 "4"  = "RC4"

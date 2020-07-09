@@ -3,7 +3,7 @@ Function Install-Tools {
     Param (
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
-        [ValidateSet("PowerSploit", "BloodHound", "Grouper", "PingCastle")]
+        [ValidateSet("PowerSploit", "BloodHound", "Grouper", "PingCastle","PowerUPSQL")]
         [String]
         $Tool
     )
