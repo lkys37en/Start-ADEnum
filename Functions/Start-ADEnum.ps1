@@ -228,6 +228,7 @@ Function Start-ADEnum {
             Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
+            $SPNS = Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat
            
             $Groups = @(
                 "Domain Admins"
@@ -314,6 +315,8 @@ Function Start-ADEnum {
                 $object | Export-CSV ($Folder, $Domain + "_" + "Computers.csv" -join "") -NoTypeInformation -Append
             }
 
+            #Gather a list of foreign users
+            Get-DomainForeignUser -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
 
             #Gathering users from local groups
             Find-DomainLocalGroupMember -ComputerDomain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
