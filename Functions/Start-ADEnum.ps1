@@ -50,7 +50,7 @@ Function Start-ADEnum {
         $Domains,
 
         [Parameter(Mandatory = $True)]
-        [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PrivExchange", "All")]
+        [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PowerUPSQL", "PrivExchange", "All")]
         [String[]]
         $Scan
     )
@@ -64,6 +64,7 @@ Function Start-ADEnum {
             "GPO"
             "Microsoft Services\Exchange"
             "Microsoft Services\ADCS"
+            "PowerUPSQL"
         )
 
         #Installs all prereqs if missing
@@ -227,6 +228,7 @@ Function Start-ADEnum {
             Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
             #Dumping all SPN's in hashcat format
+           
             $Groups = @(
                 "Domain Admins"
                 "Enterprise Admins"
@@ -281,9 +283,6 @@ Function Start-ADEnum {
                 $object | Export-Csv ($Folder, $Domain + "_" + "Users.csv" -join "") -NoTypeInformation -Append
             }
 
-            #Gather a list of foreign users
-            Get-DomainForeignUser -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
-
             #Dumping all AD computer objects
             $Computers = Get-DomainComputer * -Domain $Domain -Server $DC
 
@@ -314,6 +313,7 @@ Function Start-ADEnum {
                 $object = New-Object -TypeName PSObject -Property $ComputerProperties
                 $object | Export-CSV ($Folder, $Domain + "_" + "Computers.csv" -join "") -NoTypeInformation -Append
             }
+
 
             #Gathering users from local groups
             Find-DomainLocalGroupMember -ComputerDomain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
@@ -756,7 +756,7 @@ Function Start-ADEnum {
 
             "PowerUPSQL" {
                 foreach ($Domain in $Domains) {
-                    Write-Host -ForegroundColor Green "[+] Starting PowerView Enum for $Domain"
+                    Write-Host -ForegroundColor Green "[+] Starting PowerUPSQL Enum for $Domain"
                     Start-Job -ScriptBlock $PowerUPSQLScriptBlock -ArgumentList $ClientName, $Path, $Domain -Name PowerUPSQL_$Domain | Out-Null
                 }
             }
