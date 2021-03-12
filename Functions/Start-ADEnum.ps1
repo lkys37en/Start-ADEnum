@@ -35,24 +35,28 @@ Function Start-ADEnum {
     #>
     [CmdletBinding()]
     Param (
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $True)]
         [ValidateNotNullOrEmpty()]
         [String]
         $ClientName,
 
-        [Parameter(Mandatory = $true)]
+        [Parameter(Mandatory = $True)]
         [ValidateNotNullOrEmpty()]
         [String]
         $Path,
 
-        [Parameter(Mandatory = $false)]
+        [Parameter(Mandatory = $False)]
         [String[]]
         $Domains,
 
         [Parameter(Mandatory = $True)]
-        [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PowerUPSQL", "PrivExchange", "All")]
+        [ValidateSet("ADCS", "Bloodhound", "GPOReport", "PowerView", "PingCastle", "PowerUPSQL", "PrivExchange", "All", "QuickScan")]
         [String[]]
-        $Scan
+        $Scan,
+
+        [Parameter(Mandatory = $False)]
+        [String]
+        $UserName
     )
 
     Begin {
@@ -65,6 +69,7 @@ Function Start-ADEnum {
             "Microsoft Services\Exchange"
             "Microsoft Services\ADCS"
             "PowerUPSQL"
+            "QuickScan"
         )
 
         #Installs all prereqs if missing
@@ -113,7 +118,7 @@ Function Start-ADEnum {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Magenta "[*] Creating $Domain evidence folders"
                     mkdir -Path "$Path\$ClientName\$Domain" | Out-Null
-    
+
                     foreach ($folder in $folders) {
                         mkdir -Path "$Path\$ClientName\$Domain\$folder" | Out-Null
                     }
@@ -218,26 +223,20 @@ Function Start-ADEnum {
                 Get-DomainDNSRecord -Domain $Domain -ZoneName $Domain -Server $DC | Select-Object -Property zonename, name, Data, recordtype, distinguishedname, whencreated, whenchanged | Export-CSV ($Folder, $Domain + "_" + "DNSRecords.csv" -join "") -NoTypeInformation
             }
 
-            #Get a list of shares
-            Get-DomainFileServer -Domain $Domain -Server $DC | Out-File ($Folder, $Domain + "_" + "Fileservers.txt" -join "")
-
-            #Get a list of DFS Shares
-            Get-DomainDFSShare -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "DFSShares.csv" -join "") -NoTypeInformation
-
             #Get a list of OU's
             Get-DomainOU -Domain $Domain -Server $DC | Select-Object -Property name, description, distinguishedname, whencreated, objectguid, gplink | Export-CSV ($Folder, $Domain + "_" + "OU.csv" -join "") -NoTypeInformation
 
-            #Dumping all SPN's in hashcat format
+            #Dumping all SPN's in hashcat format and gathering members of specific domain groups
             $SPNS = Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat
-           
+
             $Groups = @(
                 "Domain Admins"
                 "Enterprise Admins"
                 "Administrators"
             )
-            
+
             foreach ($Group in $Groups) {
-                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse -OutVariable SensitiveUser 
+                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse -OutVariable SensitiveUser | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
             }
 
             foreach ($SPN in $SPNS) {
@@ -250,8 +249,26 @@ Function Start-ADEnum {
                 }
 
                 $object = New-Object -TypeName PSObject -Property $UserProperties
-                $object | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation
+                $object | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation -Append
             }
+
+#            #Gathering members of specific domain groups
+#            $Groups = @(
+#                "Domain Admins"
+#                "Enterprise Admins"
+#                "Administrators"
+#                "Account Operators"
+#                "Backup Operators"
+#                "Cert Publishers"
+#                "DnsAdmins"
+#                "Hyper-V Administrators"
+#            )
+#            foreach ($Group in $Groups) {
+#                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
+#            }
+
+            #Dump Trust details specifically looking for TGT delegation settings
+            Get-ADTrust -Filter * -Server $DC.Value | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
 
             #Dumping all AD user objects
             $Users = Get-DomainUser * -Domain $Domain -Server $DC
@@ -274,10 +291,10 @@ Function Start-ADEnum {
                     'accountexpires'                           = $User.accountexpires;
                     'admincount'                               = $User.admincount;
                     'useraccountcontrol'                       = $User.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()] };
+                    'msDS-SupportedEncryptionTypes'            = if ($User.'msds-supportedencryptiontypes') { $EncryptionTypes[($User.'msds-supportedencryptiontypes').ToString()] };
                     'serviceprincipalname'                     = (($User.serviceprincipalname) -join ',');
                     'msDS-AllowedToDelegateTo'                 = (($User.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($User.'msds-allowedtoactonbehalfofotheridentity') { (New-Object Security.AccessControl.RawSecurityDescriptor($User.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $UserProperties
@@ -303,12 +320,12 @@ Function Start-ADEnum {
                     'Whencreated'                              = $Computer.whencreated;
                     'lastlogontimestamp'                       = $Computer.lastlogontimestamp;
                     'useraccountcontrol'                       = $Computer.useraccountcontrol;
-                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes' -ne '') { $EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()] };
-                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid' -ne '') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain };
+                    'msDS-SupportedEncryptionTypes'            = if ($Computer.'msds-supportedencryptiontypes') { $EncryptionTypes[($Computer.'msds-supportedencryptiontypes').ToString()] };
+                    'mS-DS-CreatorSID'                         = if ($Computer.'ms-ds-creatorsid') { (New-Object System.Security.Principal.SecurityIdentifier($Computer.'ms-ds-creatorsid', 0)).Value | ConvertFrom-SID -Domain $Domain };
                     'ms-mcs-admpwd'                            = $Computer.'ms-mcs-admpwd';
                     'ms-mcs-admpwdexpirationtime'              = [datetime]::FromFileTime([System.Convert]::ToInt64($Computer.'ms-mcs-admpwdexpirationtime'))
                     'msDS-AllowedToDelegateTo'                 = (($Computer.'msDS-AllowedToDelegateTo') -join ',');
-                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity' -ne '') { (New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
+                    'msds-allowedtoactonbehalfofotheridentity' = if ($Computer.'msds-allowedtoactonbehalfofotheridentity') { (New-Object Security.AccessControl.RawSecurityDescriptor($Computer.'msds-allowedtoactonbehalfofotheridentity', 0)).DiscretionaryAcl.SecurityIdentifier.Value | ConvertFrom-SID -Domain $Domain };
                 }
 
                 $object = New-Object -TypeName PSObject -Property $ComputerProperties
@@ -319,27 +336,8 @@ Function Start-ADEnum {
             Get-DomainForeignUser -Domain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "ForeignUsers.csv" -join "") -NoTypeInformation
 
             #Gathering users from local groups
-            Find-DomainLocalGroupMember -ComputerDomain $Domain -Server $DC | Export-CSV ($Folder, $Domain + "_" + "LocalAdmins.csv" -join "") -NoTypeInformation
             Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Desktop Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "RDP_Users.csv" -join "") -NoTypeInformation
             Find-DomainLocalGroupMember -ComputerDomain $Domain -GroupName "Remote Management Users" -Server $DC | Export-CSV ($Folder, $Domain + "_" + "Winrm_Users.csv" -join "") -NoTypeInformation
-
-            #Gathering members of specific domain groups
-            $Groups = @(
-                "Domain Admins"
-                "Enterprise Admins"
-                "Administrators"
-                "Account Operators"
-                "Backup Operators"
-                "Cert Publishers"
-                "DnsAdmins"
-                "Hyper-V Administrators"
-            )
-            foreach ($Group in $Groups) {
-                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
-            }
-
-            #Dump Trust details specifically looking for TGT delegation settings
-            Get-ADTrust -Filter * -Server $DC.Value | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
         }
 
         #Running Bloodhound commands
@@ -382,13 +380,25 @@ Function Start-ADEnum {
             $Domain = $args[2]
             $Folder = "$Path\$ClientName\$Domain\Microsoft Services\Exchange\"
 
-            <#Reference:https://eightwone.com/references/schema-versions/
+            <#Reference:hhttps://docs.microsoft.com/en-us/exchange/new-features/build-numbers-and-release-dates?view=exchserver-2019
             https://dirkjanm.io/abusing-exchange-one-api-call-away-from-domain-admin/#>
             $ExchangeVersions = @{
+                "15.02.0792.003" = "Exchange Server 2019 CU8, Not Vulnerable"
+                "15.02.0721.002" = "Exchange Server 2019 CU7, Not Vulnerable"
+                "15.02.0659.004" = "Exchange Server 2019 CU6, Not Vulnerable"
+                "15.02.0595.003" = "Exchange Server 2019 CU5, Not Vulnerable"
+                "15.02.0529.005" = "Exchange Server 2019 CU4, Not Vulnerable"
+                "15.02.0464.005" = "Exchange Server 2019 CU3, Not Vulnerable"
                 "15.02.0397.003" = "Exchange Server 2019 CU2, Not Vulnerable"
                 "15.02.0330.005" = "Exchange Server 2019 CU1, Not Vulnerable"
                 "15.02.0221.012" = "Exchange Server 2019 RTM, Vulnerable to PrivExchange!"
                 "15.02.0196.000" = "Exchange Server 2019 Preview, Vulnerable to PrivExchange!"
+                "15.01.2176.002" = "Exchange Server 2016 CU19, Not Vulnerable"
+                "15.01.2106.002" = "Exchange Server 2016 CU18, Not Vulnerable"
+                "15.01.2044.004" = "Exchange Server 2016 CU17, Not Vulnerable"
+                "15.01.1979.003" = "Exchange Server 2016 CU16, Not Vulnerable"
+                "15.01.1913.005" = "Exchange Server 2016 CU15, Not Vulnerable"
+                "15.01.1847.003" = "Exchange Server 2016 CU14, Not Vulnerable"
                 "15.01.1779.002" = "Exchange Server 2016 CU13, Not Vulnerable"
                 "15.01.1713.005" = "Exchange Server 2016 CU12, Vulnerable to PrivExchange!"
                 "15.01.1591.010" = "Exchange Server 2016 CU11, Vulnerable to PrivExchange!"
@@ -429,7 +439,7 @@ Function Start-ADEnum {
                 "15.00.0620.029" = "Exchange Server 2013 CU1, Vulnerable to PrivExchange!"
                 "15.00.0516.032" = "Exchange Server 2013 RTM, Vulnerable to PrivExchange!"
             }
-            
+
             $RootDSE = "DC=$($Domain.Replace('.', ',DC='))"
             $CN = (([ADSI]"LDAP://cn=Microsoft Exchange,cn=Services,cn=Configuration,$RootDSE")).Children
             $ExchangeVersion = ($CN).msExchProductID
@@ -525,7 +535,7 @@ Function Start-ADEnum {
                 '1.3.6.1.4.1.311.21.19'    = 'DS_EMAIL_REPLICATION'
                 '1.3.6.1.4.1.311.10.12.1'  = 'ANY_APPLICATION_POLICY'
             }
-            
+
             #Convert name flags to human readable values
             Function ConvertFrom-NameFlag {
                 [cmdletbinding()]
@@ -537,17 +547,17 @@ Function Start-ADEnum {
 
                 Begin {
                     $NameFlags = New-Object System.Collections.Specialized.OrderedDictionary
-                    $NameFlags.Add("EnrolleeSuppliesSubject", 1) #This flag instructs the client to supply subject information in the certificate request  
+                    $NameFlags.Add("EnrolleeSuppliesSubject", 1) #This flag instructs the client to supply subject information in the certificate request
                     $NameFlags.Add("OldCertSuppliesSubjectAndAltName", 8) #This flag instructs the client to reuse values of subject name and alternative subject name extensions from an existing valid certificate when creating a certificate renewal request. Windows Server 2003, Windows Server 2008 - this flag is not supported.
-                    $NameFlags.Add("EnrolleeSuppluiesAltSubject", 65536) #This flag instructs the client to supply subject alternate name information in the certificate request.  
-                    $NameFlags.Add("AltSubjectRequireDomainDNS", 4194304) #This flag instructs the CA to add the value of the requester's FQDN and NetBIOS name to the Subject Alternative Name extension of the issued certificate.  
-                    $NameFlags.Add("AltSubjectRequireDirectoryGUID", 16777216) #This flag instructs the CA to add the value of the objectGUID attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
-                    $NameFlags.Add("AltSubjectRequireUPN" , 33554432) #This flag instructs the CA to add the value of the UPN attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
-                    $NameFlags.Add("AltSubjectRequireEmail" , 67108864) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
-                    $NameFlags.Add("AltSubjectRequireDNS" , 134217728) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.  
-                    $NameFlags.Add("SubjectRequireDNSasCN" , 268435456) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory as the CN in the subject of the issued certificate.  
-                    $NameFlags.Add("SubjectRequireEmail" , 536870912) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory as the subject of the issued certificate.  
-                    $NameFlags.Add("SubjectRequireCommonName" , 1073741824) #This flag instructs the CA to set the subject name to the requestor's CN from Active Directory.  
+                    $NameFlags.Add("EnrolleeSuppluiesAltSubject", 65536) #This flag instructs the client to supply subject alternate name information in the certificate request.
+                    $NameFlags.Add("AltSubjectRequireDomainDNS", 4194304) #This flag instructs the CA to add the value of the requester's FQDN and NetBIOS name to the Subject Alternative Name extension of the issued certificate.
+                    $NameFlags.Add("AltSubjectRequireDirectoryGUID", 16777216) #This flag instructs the CA to add the value of the objectGUID attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.
+                    $NameFlags.Add("AltSubjectRequireUPN" , 33554432) #This flag instructs the CA to add the value of the UPN attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.
+                    $NameFlags.Add("AltSubjectRequireEmail" , 67108864) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.
+                    $NameFlags.Add("AltSubjectRequireDNS" , 134217728) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory to the Subject Alternative Name extension of the issued certificate.
+                    $NameFlags.Add("SubjectRequireDNSasCN" , 268435456) #This flag instructs the CA to add the value obtained from the DNS attribute of the requestor's user object in Active Directory as the CN in the subject of the issued certificate.
+                    $NameFlags.Add("SubjectRequireEmail" , 536870912) #This flag instructs the CA to add the value of the e-mail attribute from the requestor's user object in Active Directory as the subject of the issued certificate.
+                    $NameFlags.Add("SubjectRequireCommonName" , 1073741824) #This flag instructs the CA to set the subject name to the requestor's CN from Active Directory.
                     $NameFlags.Add("SubjectrequireDirectoryPath" , -2147483648) #This flag instructs the CA to set the subject name to the requestor's distinguished name (DN) from Active Directory.
                 }
 
@@ -563,7 +573,7 @@ Function Start-ADEnum {
                     (($NameFlagValues.GetEnumerator()).Name -join ',')
                 }
             }
-            
+
             #Convert enrollment flags to human readable values
             Function ConvertFrom-EnrollmentFlag {
                 [cmdletbinding()]
@@ -575,9 +585,9 @@ Function Start-ADEnum {
 
                 Begin {
                     $EnrollmentFlags = New-Object System.Collections.Specialized.OrderedDictionary
-                    $EnrollmentFlags.Add("IncludeSymmetricAlgorithms", 1) #This flag instructs the client and server to include a Secure/Multipurpose Internet Mail Extensions (S/MIME) certificate extension, as specified in RFC4262, in the request and in the issued certificate.  
+                    $EnrollmentFlags.Add("IncludeSymmetricAlgorithms", 1) #This flag instructs the client and server to include a Secure/Multipurpose Internet Mail Extensions (S/MIME) certificate extension, as specified in RFC4262, in the request and in the issued certificate.
                     $EnrollmentFlags.Add("CAManagerApproval", 2) #This flag instructs the CA to put all requests in a pending state.
-                    $EnrollmentFlags.Add("KraPublish", 4) #This flag instructs the CA to publish the issued certificate to the key recovery agent (KRA) container in Active Directory. 
+                    $EnrollmentFlags.Add("KraPublish", 4) #This flag instructs the CA to publish the issued certificate to the key recovery agent (KRA) container in Active Directory.
                     $EnrollmentFlags.Add("DsPublish", 8) #This flag instructs clients and CA servers to append the issued certificate to the userCertificate attribute, as specified in RFC4523, on the user object in Active Directory.
                     $EnrollmentFlags.Add("AutoenrollmentCheckDsCert", 16) #This flag instructs clients not to do autoenrollment for a certificate based on this template if the user's userCertificate attribute (specified in RFC4523) in Active Directory has a valid certificate based on the same template.
                     $EnrollmentFlags.Add("Autoenrollment", 32) #This flag instructs clients to perform autoenrollment for the specified template.
@@ -605,7 +615,7 @@ Function Start-ADEnum {
                     (($NameFlagValues.GetEnumerator()).Name -join ',')
                 }
             }
-            
+
             #Convert private key flags to human readable values
             Function ConvertFrom-PrivateKeyFlag {
                 [cmdletbinding()]
@@ -674,13 +684,8 @@ Function Start-ADEnum {
             #PingCastle scanner commands
             $Arguments = @(
                 "--server $Domain --healthcheck --no-enum-limit"
-                "--scanner laps_bitlocker --server $Domain"
-                "--scanner nullsession --server $Domain"
-                "--scanner nullsession-trust --server $Domain"
                 "--scanner share --server $Domain"
-                "--scanner smb --server $Domain"
-                "--scanner spooler --server $Domain"
-                "--scanner startup --server $Domain"
+                "--scaner localadmin --server $Domain"
             )
 
             #Running all scanner commands
@@ -697,6 +702,7 @@ Function Start-ADEnum {
 
             #Remove original text files
             (Get-ChildItem $Folder).FullName | Remove-Item -Include *.txt
+
         }
 
         #Running PowerUPSQL commands
@@ -707,7 +713,6 @@ Function Start-ADEnum {
             $Folder = "$Path\$ClientName\$Domain\PowerUPSQL\"
 
             #Importing needed modules
-            Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
             Import-Module "C:\tools\PowerUpSQL\PowerUpSQL.psm1"
 
             $MSSQLServers = Get-SQLInstanceDomain
@@ -726,8 +731,69 @@ Function Start-ADEnum {
                 $object = New-Object -TypeName PSObject -Property $MSSQLProperties
                 $object | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers.csv" -join "") -NoTypeInformation -Append
             }
+
+            #Identify MSSQL sysadmin privileges with the current domain account
+            $Targets = $MSSQLServers | Get-SQLConnectionTestThreaded -Verbose -Threads 10
+
+            $Targets | Invoke-SQLOSCmd -Verbose -Command "Whoami" -Threads 10 | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers_xpcmdshell.csv" -join "") -NoTypeInformation
         }
 
+        $QuickScanMSSQL = {
+            $ClientName = $args[0]
+            $Path = $args[1]
+            $Domain = $args[2]
+            $Username = $args[3]
+            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName"
+
+            #Create User Folder
+            if ((Test-Path $args) -eq $false)
+            {
+                Write-Host -ForegroundColor Green "[+] Creating $Folder"
+                mkdir -Path $Folder | Out-Null
+            }
+
+            #Importing PowerUPSQL PS Module
+            Write-Host -ForegroundColor Green "[+] Importing PS Modules"
+            Import-Module "C:\tools\PowerUpSQL\PowerUpSQL.psm1"
+
+            $Targets = Get-SQLInstanceDomain -verbose | Get-SQLConnectionTestThreaded -Verbose -Threads 10
+            $Targets | Invoke-SQLOSCmd -Verbose -Command "Whoami" -Threads 10 | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers_xpcmdshell.csv" -join "") -NoTypeInformation -NoTypeInformation
+            }
+
+        $QuickScanPingCastle = {
+            $ClientName = $args[0]
+            $Path = $args[1]
+            $Domain = $args[2]
+            $Username = $args[3]
+            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName"
+            
+            #Create User Folder
+            if ((Test-Path $args) -eq $false)
+            {
+                Write-Host -ForegroundColor Green "[+] Creating $Folder"
+                mkdir -Path $Folder | Out-Null
+            }
+
+            #PingCastle scanner commands
+            $Arguments = @(
+                "--scanner share --server $Domain"
+            )
+
+            #Running all scanner commands
+            foreach ($Argument in $Arguments) {
+                Set-Location $Folder ; Start-Process C:\tools\PingCastle\PingCastle.exe -ArgumentList $Argument -Wait
+            }
+
+            $Output = (Get-ChildItem $Folder -Exclude *html*, *xml*).FullName
+
+            #Converting PingCastle text files into CSV's
+            foreach ($Item in $Output) {
+                Import-Csv -Path $Item -Delimiter "`t" | Export-Csv -Path  ($Folder + ($Item -split "\\" -replace "ad_scanner_" -replace ".txt" | Select-Object -Skip 5) + ".csv" -join "") -NoTypeInformation
+            }
+
+            #Remove original text files
+            (Get-ChildItem $Folder).FullName | Remove-Item -Include *.txt
+            }
 
         switch ($Scan) {
             "All" {
@@ -789,6 +855,16 @@ Function Start-ADEnum {
                 foreach ($Domain in $Domains) {
                     Write-Host -ForegroundColor Green "[+] Starting PrivExchange AD Enum for $Domain"
                     Start-Job -ScriptBlock $PrivExchangeCheck -ArgumentList $ClientName, $Path, $Domain -Name PrivExchange_$Domain | Out-Null
+                }
+            }
+
+            "QuickScan" {
+                foreach ($Domain in $Domains) {
+                    Write-Host -ForegroundColor Green "[+] Starting QuickScan PingCastle AD Enum for $Domain as $Username"
+                    Start-Job -ScriptBlock $QuickScanPingCastle -ArgumentList $ClientName, $Path, $Domain, $UserName -Name QuickScan_PingCastle_$Domain | Out-Null
+
+                    Write-Host -ForegroundColor Green "[+] Starting QuickScan PowerUPSQL AD Enum for $Domain as $Username"
+                    Start-Job -ScriptBlock $QuickScanMSSQL -ArgumentList $ClientName, $Path, $Domain, $UserName -Name QuickScan_MSSQL_$Domain | Out-Null
                 }
             }
         }

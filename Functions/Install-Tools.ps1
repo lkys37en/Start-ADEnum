@@ -7,7 +7,7 @@ Function Install-Tools {
         [String]
         $Tool
     )
-    
+
     Begin {
         #Github tools url
         $PowerSploitUrl = "https://github.com/PowershellMafia/PowerSploit.git"
@@ -52,7 +52,7 @@ Function Install-Tools {
                     Start-Process -Wait choco -ArgumentList "install $ChocoTool -y -f "
                 }
             }
-            
+
             catch {
                 throw "An error has occurred  $($_.Exception.Message)"
             }
@@ -88,7 +88,7 @@ Function Install-Tools {
                         Write-Host -ForegroundColor Green "[+] Cloning BloodHound directory to $ToolsFolder"
                         Set-Location $ToolsFolder ; git clone -q $BloodHountUrl
                     }
-                    
+
                     catch {
                         throw "An error has occurred  $($_.Exception.Message)"
                     }
@@ -111,7 +111,7 @@ Function Install-Tools {
                         throw "An error has occurred  $($_.Exception.Message)"
                     }
                 }
-                
+
                 else {
                     Write-Host -ForegroundColor Green "[+] Grouper already downloaded, performing git pull"
                     Set-Location "$ToolsFolder\Grouper" ; git pull | Out-Null
@@ -129,7 +129,7 @@ Function Install-Tools {
                         throw "An error has occurred  $($_.Exception.Message)"
                     }
                 }
-                
+
                 else {
                     Write-Host -ForegroundColor Green "[+] PowerUPSQL already downloaded, performing git pull"
                     Set-Location "$ToolsFolder\PowerUpSQL" ; git pull | Out-Null
@@ -141,8 +141,8 @@ Function Install-Tools {
                     $PingCastle = ((Invoke-WebRequest https://github.com/vletoux/pingcastle/releases -UseBasicParsing).Links | Where-Object -Property outerHTML -like ("*.zip*")).href | Select-Object -First 1
                     $PingCastleUrl = "https://github.com$PingCastle"
                     $PingCastleZip = $PingCastle -split '/' | Select-Object -Last 1
-                    $PingCastleZipDst = "C:\tools\$PingCastleZip"
-                    $PingCastleDst = "C:\tools\PingCastle"
+                    $PingCastleZipDst = "$ToolsFolder\$PingCastleZip"
+                    $PingCastleDst = "$ToolsFolder\PingCastle"
 
                     Write-Host -ForegroundColor Green "[+] Downloading PingCastle to $ToolsFolder"
                     Invoke-WebRequest -Uri $PingCastleUrl -OutFile $PingCastleZipDst
