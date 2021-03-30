@@ -684,7 +684,8 @@ Function Start-ADEnum {
             $Arguments = @(
                 "--server $Domain --healthcheck --no-enum-limit"
                 "--scanner share --server $Domain"
-                "--scaner localadmin --server $Domain"
+                "--scanner localadmin --server $Domain"
+                "--scanner smb --server $Domain"
             )
 
             #Running all scanner commands
