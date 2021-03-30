@@ -243,7 +243,7 @@ Function Start-ADEnum {
                 $UserProperties = [ordered] @{
                     'SamAccountName'                           = $SPN.samaccountname;
                     'ServicePrincipalName'                     = (($SPN.serviceprincipalname) -join ',');
-                                                                # Determine if user is a member of AD sensitive groups
+                    # Determine if user is a member of AD sensitive groups
                     'SensitiveUser'                             = if ($SPN.samaccountname | Where-Object {$SensitiveUser.MemberName -like $_}) {Write-Output "Yes"} ;
                     'Hash'                                     = ($SPN.Hash)
                 }
@@ -348,12 +348,11 @@ Function Start-ADEnum {
             $Folder = "$Path\$ClientName\$Domain\Bloodhound"
 
             #Importing needed modules
-            Import-Module "C:\Tools\BloodHound\Ingestors\SharpHound.ps1"
             Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
             $DC = (Get-NetDomain -Domain $Domain).PdcRoleOwner.Name
 
-            Start-Process C:\Tools\BloodHound\Ingestors\SharpHound.exe -ArgumentList "-d $Domain -c All --domaincontroller $DC --outputdirectory $Folder"
+            Start-Process C:\Tools\BloodHound\Collectors\SharpHound.exe -Wait -ArgumentList "-d $Domain -c All --domaincontroller $DC --outputdirectory $Folder"
         }
 
         #Running RSAT GPO Get-GPOReport commands
