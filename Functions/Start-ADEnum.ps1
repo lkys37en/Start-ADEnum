@@ -686,6 +686,7 @@ Function Start-ADEnum {
                 "--scanner share --server $Domain"
                 "--scanner localadmin --server $Domain"
                 "--scanner smb --server $Domain"
+                "--scanner spooler --server $Domain"
             )
 
             #Running all scanner commands
