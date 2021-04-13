@@ -716,7 +716,7 @@ Function Start-ADEnum {
             $Path = $args[1]
             $Domain = $args[2]
             $Username = $args[3]
-            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName"
+            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName\"
 
             #Create User Folder
             if ((Test-Path $args) -eq $false)
@@ -738,7 +738,7 @@ Function Start-ADEnum {
             $Path = $args[1]
             $Domain = $args[2]
             $Username = $args[3]
-            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName"
+            $Folder = "$Path\$ClientName\$Domain\QuickScan\$UserName\"
             
             #Create User Folder
             if ((Test-Path $args) -eq $false)
